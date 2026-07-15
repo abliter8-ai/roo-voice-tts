@@ -6,8 +6,6 @@
 
 #define AppName "Roo Voice"
 #define AppVer "1.0.0"
-#define Pyw "{app}\python\pythonw.exe"
-#define Boot """{app}\app\installers\common\bootstrap.py"""
 
 [Setup]
 AppId={{A1B2C3D4-ROO0-VOICE-ABLI-TER8AI000001}
@@ -39,12 +37,12 @@ Source: "staging\app\*"; DestDir: "{app}\app"; Flags: recursesubdirs createallsu
 Source: "roo-voice.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Roo Voice"; Filename: "{#Pyw}"; Parameters: "{#Boot}"; WorkingDir: "{app}\app"; IconFilename: "{app}\roo-voice.ico"
-Name: "{userdesktop}\Roo Voice"; Filename: "{#Pyw}"; Parameters: "{#Boot}"; WorkingDir: "{app}\app"; IconFilename: "{app}\roo-voice.ico"; Tasks: desktopicon
+Name: "{group}\Roo Voice"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\installers\common\bootstrap.py"""; WorkingDir: "{app}\app"; IconFilename: "{app}\roo-voice.ico"
+Name: "{userdesktop}\Roo Voice"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\installers\common\bootstrap.py"""; WorkingDir: "{app}\app"; IconFilename: "{app}\roo-voice.ico"; Tasks: desktopicon
 Name: "{group}\Uninstall Roo Voice"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{#Pyw}"; Parameters: "{#Boot}"; WorkingDir: "{app}\app"; Description: "Launch Roo Voice now"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\installers\common\bootstrap.py"""; WorkingDir: "{app}\app"; Description: "Launch Roo Voice now"; Flags: postinstall nowait skipifsilent
 
 [UninstallDelete]
 ; Remove the per-user env + model cache created on first run.
