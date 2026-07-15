@@ -11,8 +11,10 @@ A local TTS app that serves one reference-conditioned voice ("Roo") behind a sma
 OpenAI-compatible `POST /v1/audio/speech` endpoint. Two runtimes are supported and the launcher picks
 the right one automatically:
 
-- **Apple Silicon Mac** → MLX 8-bit model (`abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx8`).
-- **NVIDIA GPU** (Linux/Windows) → transformers INT8 (`…_int8`, default) or BF16 (`…_bf16`).
+- **Apple Silicon Mac** → MLX 4-bit (`abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4`, default) or 8-bit (`…_mlx8`).
+- **NVIDIA GPU** (Linux/Windows) → transformers INT4 NF4 (`…_int4`, default), INT8 (`…_int8`), or BF16 (`…_bf16`).
+- **AMD / any GPU / CPU** → GGUF Q4_K_M (`…_GGUF`) via llama.cpp (Vulkan/ROCm; experimental on AMD). NPU → ONNX (`…_onnx`).
+- The installer launcher has a **Runtime** dropdown (auto-detect, or pick a specific build); env `ROO_RUNTIME`/`ROO_MODEL` override in the CLI flow.
 
 The voice is fixed: the bundled `reference.wav` is served internally and the decoding settings are
 locked. Users only send text.
@@ -95,5 +97,5 @@ python server/roo_serve.py --runtime transformers \
 
 ## Reference
 
-- Models: <https://huggingface.co/abliter8-ai> (`Roo-Voice_MOSS_TTS_LT_{mlx8,int8,bf16}`).
+- Models: <https://huggingface.co/abliter8-ai> (`Roo-Voice_MOSS_TTS_LT_{mlx4,mlx8,int4,int8,bf16,GGUF,onnx}`).
 - Recipes with more detail: `recipes/mlx-apple-silicon.md`, `recipes/nvidia-cuda.md`.

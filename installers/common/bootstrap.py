@@ -56,9 +56,24 @@ def pick_runtime() -> tuple[str, str, str]:
         req = "requirements-mlx.txt" if rt == "mlx" else "requirements-cuda.txt"
         return rt, os.environ["ROO_MODEL"], req
     if IS_MAC and platform.machine() in ("arm64", "aarch64"):
-        return "mlx", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx8", "requirements-mlx.txt"
-    # Windows / Linux: assume NVIDIA GPU, INT8.
-    return "transformers", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8", "requirements-cuda.txt"
+        return "mlx", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4", "requirements-mlx.txt"
+    # Windows / Linux: assume NVIDIA GPU, NF4 4-bit (smallest bnb build).
+    return "transformers", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4", "requirements-cuda.txt"
+
+
+# User-selectable runtime configs (label -> (runtime, model_repo, requirements) | None=auto).
+# Only the runtimes this app can serve directly (MLX on Apple, transformers on NVIDIA).
+# GGUF / ONNX are documented manual paths (llama.cpp / onnxruntime), not auto-served here.
+_MLX = "requirements-mlx.txt"
+_CUDA = "requirements-cuda.txt"
+RUNTIME_CHOICES = [
+    ("Auto-detect (recommended)", None),
+    ("Apple Silicon · MLX 4-bit — smallest", ("mlx", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4", _MLX)),
+    ("Apple Silicon · MLX 8-bit — more headroom", ("mlx", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx8", _MLX)),
+    ("NVIDIA · INT4 (NF4) — smallest", ("transformers", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4", _CUDA)),
+    ("NVIDIA · INT8 — more headroom", ("transformers", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8", _CUDA)),
+    ("NVIDIA · BF16 — full precision", ("transformers", "abliter8-ai/Roo-Voice_MOSS_TTS_LT_bf16", _CUDA)),
+]
 
 
 def venv_python(venv: Path) -> Path:
@@ -66,11 +81,11 @@ def venv_python(venv: Path) -> Path:
 
 
 class Launcher:
-    def __init__(self):
+    def __init__(self, choice: tuple[str, str, str] | None = None):
         self.data = data_dir()
         self.venv = self.data / "env"
         self.hf = self.data / "hf-cache"
-        self.runtime, self.model, self.req = pick_runtime()
+        self.runtime, self.model, self.req = choice if choice else pick_runtime()
         self.proc: subprocess.Popen | None = None
         self.status = "Starting…"
 
@@ -150,44 +165,54 @@ def gui_main():
     import tkinter as tk
     from tkinter import ttk
 
-    L = Launcher()
     root = tk.Tk()
     root.title("Roo Voice")
     root.configure(bg="#000000")
-    root.geometry("440x220")
+    root.geometry("470x320")
     RED = "#FF093A"
     tk.Label(root, text="ROO VOICE", fg=RED, bg="#000000",
-             font=("Helvetica", 26, "bold")).pack(pady=(26, 4))
-    sub = tk.Label(root, text=f"{L.runtime.upper()} · one-time setup", fg="#8a8f96",
-                   bg="#000000", font=("Helvetica", 11))
-    sub.pack()
-    status = tk.Label(root, text="Starting…", fg="#ffffff", bg="#000000",
-                      font=("Helvetica", 12), wraplength=390, justify="center")
-    status.pack(pady=14)
+             font=("Helvetica", 26, "bold")).pack(pady=(24, 2))
+    tk.Label(root, text="the local voice of Roo", fg="#8a8f96", bg="#000000",
+             font=("Helvetica", 11)).pack()
+
     style = ttk.Style(root)
     try:
         style.theme_use("clam")
         style.configure("R.Horizontal.TProgressbar", background=RED, troughcolor="#1b1c1f")
     except Exception:
         pass
-    bar = ttk.Progressbar(root, mode="indeterminate", length=320,
+
+    # ---- runtime selector (shown first) ----
+    sel = tk.Frame(root, bg="#000000")
+    sel.pack(pady=(20, 4))
+    tk.Label(sel, text="Runtime", fg="#ffffff", bg="#000000",
+             font=("Helvetica", 11, "bold")).pack(anchor="w")
+    combo = ttk.Combobox(sel, values=[c[0] for c in RUNTIME_CHOICES],
+                         state="readonly", width=40)
+    combo.current(0)
+    combo.pack(pady=(3, 3))
+    tk.Label(sel, text="Auto-detect picks the right build for your machine.\n"
+                       "Choose manually only if you know your hardware.",
+             fg="#6a6f76", bg="#000000", font=("Helvetica", 9), justify="left").pack(anchor="w")
+
+    status = tk.Label(root, text="", fg="#ffffff", bg="#000000",
+                      font=("Helvetica", 12), wraplength=420, justify="center")
+    bar = ttk.Progressbar(root, mode="indeterminate", length=350,
                           style="R.Horizontal.TProgressbar")
-    bar.pack(pady=4)
-    bar.start(14)
-    open_btn = {"w": None}
+    state = {"L": None}
 
     def set_status(msg):
-        L.status = msg
+        if state["L"]:
+            state["L"].status = msg
         root.after(0, lambda: status.config(text=msg))
 
     def on_ready(url):
         def apply():
             bar.stop(); bar.pack_forget()
             status.config(text="Running — Roo Voice opened in your browser.")
-            b = tk.Button(root, text="Open Roo Voice", command=lambda: webbrowser.open(url),
-                          bg=RED, fg="#ffffff", relief="flat", font=("Helvetica", 12, "bold"),
-                          padx=16, pady=6, activebackground="#c60830", activeforeground="#fff")
-            b.pack(pady=6); open_btn["w"] = b
+            tk.Button(root, text="Open Roo Voice", command=lambda: webbrowser.open(url),
+                      bg=RED, fg="#ffffff", relief="flat", font=("Helvetica", 12, "bold"),
+                      padx=16, pady=6, activebackground="#c60830", activeforeground="#fff").pack(pady=6)
         root.after(0, apply)
 
     def on_fail(msg):
@@ -196,12 +221,28 @@ def gui_main():
             status.config(text=msg, fg="#ff6b6b")
         root.after(0, apply)
 
-    threading.Thread(target=L.setup_and_launch,
-                     args=(set_status, on_ready, on_fail), daemon=True).start()
+    def start():
+        choice = RUNTIME_CHOICES[combo.current()][1]
+        L = Launcher(choice); state["L"] = L
+        sel.pack_forget(); start_btn.pack_forget()
+        tk.Label(root, text=f"{L.runtime.upper()} · one-time setup", fg="#8a8f96",
+                 bg="#000000", font=("Helvetica", 10)).pack()
+        status.pack(pady=12); bar.pack(pady=4); bar.start(14)
+        threading.Thread(target=L.setup_and_launch,
+                         args=(set_status, on_ready, on_fail), daemon=True).start()
+
+    start_btn = tk.Button(root, text="Start", command=start, bg=RED, fg="#ffffff",
+                          relief="flat", font=("Helvetica", 12, "bold"), padx=28, pady=6,
+                          activebackground="#c60830", activeforeground="#fff")
+    start_btn.pack(pady=12)
 
     def on_close():
-        set_status("Stopping…")
-        threading.Thread(target=lambda: (L.stop(), root.after(0, root.destroy)), daemon=True).start()
+        L = state["L"]
+        if L:
+            set_status("Stopping…")
+            threading.Thread(target=lambda: (L.stop(), root.after(0, root.destroy)), daemon=True).start()
+        else:
+            root.destroy()
     root.protocol("WM_DELETE_WINDOW", on_close)
     root.mainloop()
 

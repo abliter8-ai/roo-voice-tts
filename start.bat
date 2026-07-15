@@ -15,7 +15,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if "%ROO_MODEL%"=="" set "ROO_MODEL=abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8"
+if "%ROO_MODEL%"=="" set "ROO_MODEL=abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4"
 if "%PORT%"=="" set "PORT=8080"
 
 where python >nul 2>&1

@@ -38,20 +38,45 @@ the right model from Hugging Face on first run, and opens **http://localhost:808
 
 ## Which model runs on my hardware?
 
-The launcher picks the right one automatically. For reference:
+<p align="left">
+  <img src="https://design8.b-cdn.net/1-apple-mlx-runtime.png" alt="Apple MLX" height="46">
+  &nbsp;&nbsp;<img src="https://design8.b-cdn.net/1-nvidia-cuda.png" alt="NVIDIA CUDA" height="46">
+  &nbsp;&nbsp;<img src="https://design8.b-cdn.net/1-amd-vulkan-rocm-runtime.png" alt="AMD Vulkan / ROCm" height="46">
+  &nbsp;&nbsp;<img src="https://design8.b-cdn.net/1-onnx-runtime-logo.png" alt="ONNX Runtime" height="46">
+</p>
 
-| Your hardware | Model it uses | Size | Approx. memory | Runtime |
-|---|---|---|---|---|
-| **Apple Silicon Mac** (M1 / M2 / M3 / M4) | [`…_mlx8`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx8) — MLX 8-bit | ~3.6 GB | ~5 GB unified | `mlx-audio` |
-| **NVIDIA GPU** (RTX 20-series / Turing and newer) | [`…_int8`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8) — bitsandbytes INT8 | ~4.3 GB | ~6 GB VRAM | `transformers` + `bitsandbytes` |
-| **NVIDIA GPU**, want full precision | [`…_bf16`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_bf16) — BF16 | ~5.8 GB | ~9–10 GB VRAM | `transformers` |
+The voice ships in several builds so it runs well on **any** silicon. The launcher auto-picks for
+Apple Silicon and NVIDIA; AMD and NPU users pick a build below. All builds are the *same* fine-tuned
+voice — they differ only in quantization and runtime.
 
-Notes:
-- **Apple Silicon only** for MLX — it does not run on Intel Macs or PCs.
-- **NVIDIA CUDA only** for INT8/BF16 — `bitsandbytes` (INT8) needs a CUDA GPU. Blackwell (RTX 50-series)
-  users: install the CUDA 12.8 PyTorch build first (see `server/requirements-cuda.txt`).
-- To force the BF16 model on NVIDIA: `ROO_MODEL=abliter8-ai/Roo-Voice_MOSS_TTS_LT_bf16 ./start.sh`
-- There is **no CPU-practical** path — generation on CPU is far too slow to be usable.
+| Your hardware | Recommended build | Size | Memory | Runtime | Auto? |
+|---|---|---|---|---|---|
+| **Apple Silicon** (M1–M4) | [`…_mlx4`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4) — MLX 4-bit *(default)* | 2.3 GB | ~4 GB unified | `mlx-audio` | ✅ |
+| Apple Silicon, more headroom | [`…_mlx8`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx8) — MLX 8-bit | 3.6 GB | ~5 GB unified | `mlx-audio` | opt-in |
+| **NVIDIA GPU** (Turing+/RTX 20-series+) | [`…_int4`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4) — NF4 4-bit *(default)* | 3.5 GB | ~4 GB VRAM | `transformers` + `bitsandbytes` | ✅ |
+| NVIDIA, more headroom | [`…_int8`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8) / [`…_bf16`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_bf16) | 4.5 / 6.1 GB | ~6 / ~10 GB VRAM | `transformers` | opt-in |
+| **AMD Radeon** (RDNA3/3.5/4, iGPU or dGPU) | [`…_GGUF`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_GGUF) — Q4_K_M | 1.76 GB | Vulkan/ROCm | llama.cpp (Vulkan) | manual |
+| **Any GPU / CPU, one file** | [`…_GGUF`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_GGUF) — Q4_K_M | 1.76 GB | GPU or RAM | llama.cpp (Vulkan/ROCm/CUDA/Metal) | manual |
+| **NPU** (Ryzen AI XDNA2, Snapdragon Hexagon) | [`…_onnx`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_onnx) | — | — | onnxruntime (VitisAI/QNN EP) | manual |
+
+**Picking by GPU vendor — the honest version:**
+
+- **Apple Silicon → MLX.** MLX is Apple-only; the 4-bit is the same voice as the 8-bit, 1.3 GB lighter.
+- **NVIDIA → int4/int8 (bitsandbytes) or GGUF.** `bitsandbytes` needs CUDA. Blackwell (RTX 50-series):
+  install the CUDA 12.8 PyTorch build first (see `server/requirements-cuda.txt`). Native **NVFP4** is a
+  future Blackwell-only option.
+- **AMD Radeon → GGUF via llama.cpp (Vulkan).** `bitsandbytes` is NVIDIA-first and unreliable on consumer
+  Radeon, so **don't** use the int4/int8 builds on AMD — use the GGUF with llama.cpp's **Vulkan** backend
+  (works on RDNA iGPUs like the 890M and dGPUs; ROCm is an option on supported cards). This is also the
+  single cross-vendor file that runs everywhere.
+- **NPU (Ryzen AI / Snapdragon) → ONNX.** onnxruntime runs the ONNX build on the NPU via VitisAI (AMD
+  XDNA2) or QNN/Hexagon (Snapdragon). Great for low-power; needs the platform's onnxruntime EP.
+- **CPU** works via the GGUF but is slow — fine for the occasional clip, not interactive use.
+
+> **Shared dependency:** every build needs the ~7 GB **MOSS-Audio-Tokenizer** codec (fetched once from
+> [OpenMOSS](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer), or the
+> [ONNX codec](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-ONNX) for the GGUF/ONNX paths).
+> The LM quant is what shrinks (down to 1.76 GB); the codec size is inherent to MOSS-TTS Local.
 
 ---
 

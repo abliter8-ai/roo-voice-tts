@@ -17,13 +17,13 @@ PY="${PYTHON:-python3}"
 # ---- pick the runtime for your hardware -----------------------------------
 if [ "$OS" = "Darwin" ] && { [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; }; then
   RUNTIME="mlx"
-  MODEL="${ROO_MODEL:-abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx8}"
+  MODEL="${ROO_MODEL:-abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4}"
   REQ="server/requirements-mlx.txt"
   echo "  Detected: Apple Silicon Mac  →  MLX 8-bit"
 elif command -v nvidia-smi >/dev/null 2>&1; then
   RUNTIME="transformers"
-  # INT8 by default (smaller); set ROO_MODEL to the BF16 repo for full precision.
-  MODEL="${ROO_MODEL:-abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8}"
+  # NF4 4-bit by default (smallest); set ROO_MODEL to the int8/bf16 repo for more headroom.
+  MODEL="${ROO_MODEL:-abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4}"
   REQ="server/requirements-cuda.txt"
   case "$MODEL" in *bf16*) LABEL=BF16;; *) LABEL=INT8;; esac
   echo "  Detected: NVIDIA GPU  →  transformers ($LABEL)"
