@@ -5,6 +5,15 @@
 A local text-to-speech app for **Roo's voice** — that signature baritone with the estuary accent.
 Clone this repo, run one command, and a polished web UI opens in your browser. Type text, hear Roo.
 
+<p align="center">
+  <img src="https://design8.b-cdn.net/1-apple-mlx-runtime.png" alt="Apple MLX" height="50">
+  &nbsp;&nbsp;<img src="https://design8.b-cdn.net/1-nvidia-cuda.png" alt="NVIDIA CUDA" height="50">
+  &nbsp;&nbsp;<img src="https://design8.b-cdn.net/1-amd-vulkan-rocm-runtime.png" alt="AMD Vulkan / ROCm" height="50">
+  &nbsp;&nbsp;<img src="https://design8.b-cdn.net/1-onnx-runtime-logo.png" alt="ONNX Runtime" height="50">
+</p>
+
+<p align="center"><em>Runs on Apple Silicon (MLX), NVIDIA (CUDA), AMD (Vulkan/ROCm), and NPUs (ONNX).</em></p>
+
 The voice is a **reference-conditioned, single-voice** model: the fine-tune puts Roo's timbre and
 accent in the weights, and a bundled `reference.wav` completes the delivery. Everything — the
 reference and the decoding settings — is **baked in**, so you don't configure anything.
