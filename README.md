@@ -68,6 +68,41 @@ repetition penalty 1.1, 32 RVQ codebooks, 24 kHz mono.
 
 ---
 
+## How fast is it? (time-to-speech)
+
+Generation is autoregressive, so wall-clock time scales with the **length of the audio** produced.
+Rough measured guidance (a short one-sentence clip is ~3–5 s of audio):
+
+| Hardware | Speed | A one-sentence clip takes |
+|---|---|---|
+| **Apple Silicon** (M1 Max, warm) | ~2.5× real-time | **~10–13 s** |
+| **NVIDIA INT8** (RTX 5060 Ti) | ~7× real-time | **~30–40 s** |
+| Bigger NVIDIA cards (4090 / A100 …) | faster | proportionally quicker |
+
+The **first** generation after the server starts is slower (model warm-up); subsequent ones settle to
+the numbers above. Keeping inputs short (~15 s) also keeps each generation snappy.
+
+---
+
+## Longer audio — batch compose
+
+Because the voice is happiest on short lines, the way to make **longer** audio is to generate several
+short lines and stitch them together. `tools/compose.py` does exactly that: it queues each line through
+your running server, then concatenates the results with **ffmpeg** (with a small pause between lines).
+
+```bash
+# one line per line of a text file
+python tools/compose.py --infile script.txt --out story.wav
+
+# or inline, with a custom pause between lines
+python tools/compose.py --text "After the last dance class..." "Could you ask Sarah..." --out out.wav --gap 0.5
+```
+
+Requires `ffmpeg` on your PATH ([download](https://ffmpeg.org/download.html)). Write one sentence per
+line, keep them short, and you get a single clean WAV of any length.
+
+---
+
 ## What's in this repo
 
 ```
@@ -77,6 +112,7 @@ roo-voice-tts-app/
 ├── web/index.html            the Roo Voice web UI
 ├── server/roo_serve.py       serving backend (MLX + transformers), OpenAI-compatible /v1/audio/speech
 ├── server/requirements-*.txt dependencies per runtime
+├── tools/compose.py          batch-generate short lines + ffmpeg them into longer audio
 ├── recipes/                  manual step-by-step recipes + hardware detail
 └── assets/                   fonts, backgrounds, animations, sample audio
 ```
