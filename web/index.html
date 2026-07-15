@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Roo Voice</title>
+<style>
+  @font-face{
+    font-family:'Bebas Neue';
+    src:url('assets/BebasNeue-Regular.ttf') format('truetype');
+    font-weight:400; font-display:swap;
+  }
+  :root{
+    --red:#FF093A; --white:#fff; --black:#000;
+    --ink:#0a0a0b; --line:#1b1c1f; --mut:#8b8f96;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:#000; color:var(--white); font-family:var(--sans);
+    background-image:url('assets/background-16x9.png');
+    background-size:cover; background-position:center; background-attachment:fixed;
+    min-height:100vh; min-height:100dvh; overflow-x:hidden;
+  }
+  @media (max-aspect-ratio:1/1){
+    body{background-image:url('assets/background-9x16.png')}
+  }
+  .scrim{position:fixed; inset:0; background:
+    radial-gradient(60% 55% at 50% 42%, rgba(0,0,0,.35), rgba(0,0,0,.82) 78%);
+    pointer-events:none; z-index:0;}
+  .wrap{position:relative; z-index:1; min-height:100vh; min-height:100dvh;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:40px 20px; gap:22px;}
+
+  .brand{font-family:var(--sans); font-weight:800; letter-spacing:.32em; text-transform:uppercase;
+    font-size:11px; color:var(--red); display:flex; align-items:center; gap:8px}
+  .brand .dot{width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 10px var(--red)}
+
+  h1{font-family:'Bebas Neue',var(--sans); font-weight:400; margin:0; line-height:.86;
+    font-size:clamp(66px,15vw,150px); letter-spacing:.02em; text-align:center;
+    text-shadow:0 0 42px rgba(255,9,58,.28);}
+  h1 .stop{color:var(--red)}
+  .tagline{color:#c7cace; font-size:13px; letter-spacing:.06em; text-align:center; margin-top:-4px;
+    max-width:560px}
+
+  .avatar{width:clamp(150px,34vw,208px); height:clamp(150px,34vw,208px); border-radius:50%;
+    overflow:hidden; border:1px solid rgba(255,9,58,.5); position:relative;
+    box-shadow:0 0 0 6px rgba(0,0,0,.55), 0 0 60px rgba(255,9,58,.22);
+    background:#0b0b0c; display:flex; align-items:center; justify-content:center; transition:box-shadow .3s}
+  .avatar img{width:100%;height:100%;object-fit:cover;display:none}
+  .avatar.gen{box-shadow:0 0 0 6px rgba(0,0,0,.55), 0 0 70px rgba(255,9,58,.45)}
+  .avatar.speak{box-shadow:0 0 0 6px rgba(0,0,0,.55), 0 0 90px rgba(255,9,58,.6)}
+  .avatar .ring{position:absolute; inset:0; border-radius:50%;
+    background:conic-gradient(from 0deg, transparent, rgba(255,9,58,.55), transparent 40%);
+    opacity:0; animation:spin 1.1s linear infinite}
+  .avatar.gen .ring{opacity:1}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .card{width:100%; max-width:640px; background:rgba(8,8,10,.72);
+    border:1px solid var(--line); border-radius:18px; padding:22px;
+    backdrop-filter:blur(14px) saturate(120%); -webkit-backdrop-filter:blur(14px) saturate(120%);
+    box-shadow:0 24px 80px rgba(0,0,0,.6)}
+  textarea{width:100%; min-height:104px; resize:vertical; background:#0c0c0e; color:#fff;
+    border:1px solid #232428; border-radius:12px; padding:15px 16px; font-size:16px;
+    font-family:var(--sans); line-height:1.45; outline:none; transition:border-color .2s}
+  textarea:focus{border-color:var(--red); box-shadow:0 0 0 3px rgba(255,9,58,.12)}
+  .hint{color:var(--mut); font-size:11.5px; letter-spacing:.02em; margin-top:8px; line-height:1.5}
+  .row{display:flex; align-items:center; gap:14px; margin-top:14px; flex-wrap:wrap}
+  button.speak{font-family:'Bebas Neue',var(--sans); font-weight:400; letter-spacing:.12em;
+    background:var(--red); color:#fff; border:0; border-radius:11px; padding:13px 30px;
+    font-size:22px; cursor:pointer; text-transform:uppercase; line-height:1;
+    box-shadow:0 8px 24px rgba(255,9,58,.32); transition:transform .08s, box-shadow .2s}
+  button.speak:hover{box-shadow:0 10px 30px rgba(255,9,58,.5)}
+  button.speak:active{transform:translateY(1px)}
+  button.speak:disabled{opacity:.45; cursor:default; box-shadow:none}
+  .meta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--mut);
+    font-size:12px; letter-spacing:.02em; font-variant-numeric:tabular-nums}
+  .badge{margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--red);
+    border:1px solid rgba(255,9,58,.4); border-radius:999px; padding:5px 11px; font-weight:700}
+  audio{width:100%; margin-top:16px; display:none}
+  audio.on{display:block}
+  .foot{color:#6a6e74; font-size:11px; letter-spacing:.04em; text-align:center; max-width:560px;
+    line-height:1.6}
+  .foot b{color:#a7abb1; font-weight:600}
+</style>
+</head>
+<body>
+<div class="scrim"></div>
+<div class="wrap">
+  <div class="brand"><span class="dot"></span>abliter8 · voice</div>
+  <h1>ROO<span class="stop">.</span>VOICE</h1>
+  <div class="tagline">A signature baritone with an estuary accent — reference-conditioned, single-voice, 24&nbsp;kHz.</div>
+
+  <div class="avatar" id="avatar">
+    <div class="ring"></div>
+    <img id="genImg" src="assets/generating.gif" alt="">
+    <img id="spkImg" src="assets/speaking.gif" alt="">
+  </div>
+
+  <div class="card">
+    <textarea id="t" maxlength="600" placeholder="Type something for Roo to say…">After the last dance class, I parked the car beside the garden wall.</textarea>
+    <div class="hint" id="hint">Best with a sentence or two (~15&nbsp;s). Punctuation shapes the pauses — SSML / markup isn't supported.</div>
+    <div class="row">
+      <button class="speak" id="go" onclick="gen()">Speak</button>
+      <span class="meta" id="m">seed 42 · temp 1.0 · top-k 50 · top-p 0.95</span>
+      <span class="badge" id="badge">…</span>
+    </div>
+    <audio id="a" controls></audio>
+  </div>
+
+  <div class="foot">Fixed voice — the <b>reference is baked in server-side</b>; you supply only text.
+    The <b>fine-tune</b> makes the voice; the reference completes the delivery. Neither alone is Roo.</div>
+</div>
+
+<script>
+const avatar=document.getElementById('avatar'), genImg=document.getElementById('genImg'),
+      spkImg=document.getElementById('spkImg'), a=document.getElementById('a'),
+      badge=document.getElementById('badge'), m=document.getElementById('m'), go=document.getElementById('go');
+
+function state(s){ // idle | gen | speak
+  avatar.classList.toggle('gen', s==='gen');
+  avatar.classList.toggle('speak', s==='speak');
+  genImg.style.display = s==='gen' ? 'block':'none';
+  spkImg.style.display = s==='speak' ? 'block':'none';
+}
+a.addEventListener('play',()=>state('speak'));
+a.addEventListener('ended',()=>state('idle'));
+a.addEventListener('pause',()=>{ if(a.currentTime>0 && !a.ended) return; state('idle'); });
+
+fetch('/info').then(r=>r.json()).then(d=>{
+  badge.textContent=(d.runtime||'')+' · '+(d.device||'');
+}).catch(()=>{ badge.textContent='ready'; });
+
+async function gen(){
+  const txt=document.getElementById('t').value.trim(); if(!txt) return;
+  go.disabled=true; state('gen'); m.textContent='generating…';
+  try{
+    const r=await fetch('/v1/audio/speech',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({input:txt})});
+    if(!r.ok){ m.textContent='error '+r.status; state('idle'); go.disabled=false; return; }
+    const blob=await r.blob(); a.src=URL.createObjectURL(blob); a.className='on';
+    const gs=r.headers.get('X-Roo-Gen-Seconds'), rtf=r.headers.get('X-Roo-RTF'),
+          au=r.headers.get('X-Roo-Audio-Seconds');
+    m.textContent=(gs?gs+'s':'')+(au?' · '+au+'s audio':'')+(rtf?' · '+rtf+'x rt':'');
+    a.play();
+  }catch(e){ m.textContent='error'; state('idle'); }
+  go.disabled=false;
+}
+document.getElementById('t').addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='Enter') gen();
+});
+</script>
+</body>
+</html>

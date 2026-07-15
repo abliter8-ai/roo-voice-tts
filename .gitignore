@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+roo-gen.jsonl
+.DS_Store
+assets/.DS_Store

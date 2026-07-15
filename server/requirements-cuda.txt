@@ -1,0 +1,20 @@
+# Roo Voice — NVIDIA GPU (transformers) runtime, INT8 or BF16.
+# Installed automatically by ./start.sh (or start.bat) on a machine with an NVIDIA GPU.
+#
+# torch/torchaudio: the default wheels bundle CUDA and work on most NVIDIA GPUs
+# (RTX 20/30/40, Ampere/Ada). If you have a Blackwell card (RTX 50-series) install
+# the CUDA 12.8 build first:
+#     pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+torch>=2.4
+torchaudio>=2.4
+# transformers is PINNED: the model's remote code targets 5.0.0.
+transformers==5.0.0
+bitsandbytes>=0.43        # required for the INT8 model (ignored by BF16)
+accelerate>=0.30
+sentencepiece>=0.2
+soundfile>=0.12
+librosa>=0.10
+huggingface-hub>=0.25
+fastapi>=0.110
+uvicorn>=0.27
+numpy>=1.24
