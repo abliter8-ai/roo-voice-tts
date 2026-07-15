@@ -39,7 +39,11 @@ echo   Starting Roo Voice on http://localhost:%PORT%/
 echo   (first start also downloads the model - please wait)
 echo.
 
-start "" http://localhost:%PORT%/
+REM Open the browser only once the server answers /healthz (first run downloads
+REM the model, which can take minutes) — a background PowerShell poll handles it.
+start "" powershell -NoProfile -WindowStyle Hidden -Command ^
+  "for($i=0;$i -lt 120;$i++){try{Invoke-WebRequest -UseBasicParsing http://localhost:%PORT%/healthz -TimeoutSec 2 ^| Out-Null; Start-Process 'http://localhost:%PORT%/'; break}catch{Start-Sleep 3}}"
+
 python server\roo_serve.py --runtime transformers --model "%ROO_MODEL%" --reference reference.wav --port %PORT%
 
 endlocal

@@ -45,6 +45,7 @@ open http://localhost:8080/
 
 ## Notes
 
-- Generation on an M-series Mac is a few seconds for a short line.
+- Generation on an M-series Mac is roughly **~10–13 s** for a short line once warm (the first
+  generation after start is slower). See the README's time-to-speech guide for details.
 - The reference voice is baked into the server — you only send text.
 - Keep inputs to a sentence or two (~15 s) for best quality; punctuation drives the pauses; no SSML.

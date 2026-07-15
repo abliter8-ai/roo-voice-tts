@@ -144,14 +144,17 @@ function state(s){ // idle | gen | speak
 function busy(b){ go.disabled=b; composeBtn.disabled=b; }
 a.addEventListener('play',()=>state('speak'));
 a.addEventListener('ended',()=>state('idle'));
-a.addEventListener('pause',()=>{ if(a.currentTime>0 && !a.ended) return; state('idle'); });
+a.addEventListener('pause',()=>state('idle'));
 
 fetch('/info').then(r=>r.json()).then(d=>{
   badge.textContent=(d.runtime||'')+' · '+(d.device||'');
 }).catch(()=>{ badge.textContent='ready'; });
 
+let _lastUrl=null;
 function showResult(blob, name){
   const url=URL.createObjectURL(blob);
+  if(_lastUrl) URL.revokeObjectURL(_lastUrl);
+  _lastUrl=url;
   a.src=url; a.className='on';
   dl.href=url; dl.setAttribute('download', name); dl.classList.add('on');
 }
@@ -171,7 +174,8 @@ async function gen(){
     const {blob,gs,au,rtf}=await synth(txt);
     showResult(blob,'roo-voice.wav');
     m.textContent=(gs?gs+'s':'')+(au?' · '+au+'s audio':'')+(rtf?' · '+rtf+'x rt':'');
-    a.play();
+    state('idle');                 // reset spinner even if autoplay is blocked
+    a.play().catch(()=>{});        // iOS/Safari may reject play() after the await; clip is still ready
   }catch(e){ m.textContent='error — '+e.message; state('idle'); }
   busy(false);
 }
@@ -194,7 +198,8 @@ async function compose(){
     showResult(wav,'roo-voice-composed.wav');
     const dur=(bufs.reduce((s,b)=>s+b.duration,0)+gap*(bufs.length-1)).toFixed(1);
     m.textContent=lines.length+' lines · '+dur+'s · '+totalGen.toFixed(0)+'s to generate';
-    a.play();
+    state('idle');                 // reset spinner even if autoplay is blocked
+    a.play().catch(()=>{});        // clip is ready + downloadable regardless of autoplay
   }catch(e){ m.textContent='compose error — '+e.message; state('idle'); }
   busy(false);
 }

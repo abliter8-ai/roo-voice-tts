@@ -25,7 +25,8 @@ elif command -v nvidia-smi >/dev/null 2>&1; then
   # INT8 by default (smaller); set ROO_MODEL to the BF16 repo for full precision.
   MODEL="${ROO_MODEL:-abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8}"
   REQ="server/requirements-cuda.txt"
-  echo "  Detected: NVIDIA GPU  →  transformers ($( [ "${MODEL}" = *bf16* ] && echo BF16 || echo INT8 ))"
+  case "$MODEL" in *bf16*) LABEL=BF16;; *) LABEL=INT8;; esac
+  echo "  Detected: NVIDIA GPU  →  transformers ($LABEL)"
 else
   echo "  No supported accelerator found."
   echo "  Roo Voice needs an Apple Silicon Mac (M1–M4) or an NVIDIA GPU."
@@ -36,6 +37,11 @@ fi
 # ---- python check ----------------------------------------------------------
 if ! command -v "$PY" >/dev/null 2>&1; then
   echo "  Python 3 not found. Install Python 3.10+ and re-run."
+  exit 1
+fi
+if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+  echo "  Python $("$PY" -V 2>&1 | awk '{print $2}') found, but 3.10+ is required."
+  echo "  Install a newer Python (or set PYTHON=/path/to/python3.11) and re-run."
   exit 1
 fi
 

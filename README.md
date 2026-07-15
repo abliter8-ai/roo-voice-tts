@@ -73,11 +73,14 @@ repetition penalty 1.1, 32 RVQ codebooks, 24 kHz mono.
 Generation is autoregressive, so wall-clock time scales with the **length of the audio** produced.
 Rough measured guidance (a short one-sentence clip is ~3–5 s of audio):
 
-| Hardware | Speed | A one-sentence clip takes |
+| Hardware | Generation time | A one-sentence clip takes |
 |---|---|---|
-| **Apple Silicon** (M1 Max, warm) | ~2.5× real-time | **~10–13 s** |
-| **NVIDIA INT8** (RTX 5060 Ti) | ~7× real-time | **~30–40 s** |
-| Bigger NVIDIA cards (4090 / A100 …) | faster | proportionally quicker |
+| **Apple Silicon** (M1 Max, warm) | ~2.5× the clip's length | **~10–13 s** |
+| **NVIDIA INT8** (RTX 5060 Ti) | ~7× the clip's length | **~30–40 s** |
+| Bigger NVIDIA cards (4090 / A100 …) | less | proportionally quicker |
+
+(i.e. producing ~4 s of audio takes ~2.5× that on Apple Silicon — it's slower than real-time, so plan
+for the wait rather than streaming.)
 
 The **first** generation after the server starts is slower (model warm-up); subsequent ones settle to
 the numbers above. Keeping inputs short (~15 s) also keeps each generation snappy.
