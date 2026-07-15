@@ -25,14 +25,19 @@ Copy-Item -Recurse -Force "$repo\server","$repo\web","$repo\assets","$repo\refer
 Copy-Item -Force "$repo\installers\common\bootstrap.py" "$stage\app\installers\common\"
 
 Write-Host "==> compile with Inno Setup"
-$iscc = "ISCC.exe"
-if (-not (Get-Command $iscc -ErrorAction SilentlyContinue)) {
-  foreach ($p in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
-    if (Test-Path $p) { $iscc = $p; break }
-  }
+$iscc = $null
+if (Get-Command "ISCC.exe" -ErrorAction SilentlyContinue) { $iscc = "ISCC.exe" }
+else {
+  $candidates = @(
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"   # winget per-user install
+  )
+  foreach ($p in $candidates) { if ($p -and (Test-Path $p)) { $iscc = $p; break } }
 }
-if (-not (Get-Command $iscc -ErrorAction SilentlyContinue) -and -not (Test-Path $iscc)) {
-  throw "Inno Setup (ISCC.exe) not found. Install from https://jrsoftware.org/isdl.php"
+if (-not $iscc) {
+  throw "Inno Setup (ISCC.exe) not found. Install: winget install JRSoftware.InnoSetup  (or https://jrsoftware.org/isdl.php)"
 }
+Write-Host "    ISCC: $iscc"
 & $iscc "$PSScriptRoot\roo-voice.iss"
 Write-Host "==> DONE -> $PSScriptRoot\dist\Roo-Voice-Setup.exe"
