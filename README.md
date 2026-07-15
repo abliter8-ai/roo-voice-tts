@@ -84,11 +84,16 @@ the numbers above. Keeping inputs short (~15 s) also keeps each generation snapp
 
 ---
 
-## Longer audio — batch compose
+## Longer audio — compose
 
 Because the voice is happiest on short lines, the way to make **longer** audio is to generate several
-short lines and stitch them together. `tools/compose.py` does exactly that: it queues each line through
-your running server, then concatenates the results with **ffmpeg** (with a small pause between lines).
+short lines and stitch them together. There are two ways:
+
+**In the web UI (no extra tools).** Put one sentence per line in the box and click **Compose**. The app
+generates each line in turn (showing progress), stitches them into a single clip **in your browser**, and
+gives you a **Download WAV** button. Nothing to install.
+
+**From the command line** — `tools/compose.py`, for scripting / larger jobs:
 
 ```bash
 # one line per line of a text file
@@ -98,8 +103,21 @@ python tools/compose.py --infile script.txt --out story.wav
 python tools/compose.py --text "After the last dance class..." "Could you ask Sarah..." --out out.wav --gap 0.5
 ```
 
-Requires `ffmpeg` on your PATH ([download](https://ffmpeg.org/download.html)). Write one sentence per
-line, keep them short, and you get a single clean WAV of any length.
+> The **command-line** tool uses **ffmpeg** to stitch — see *System dependencies* below. The **web-UI**
+> Compose does **not** need ffmpeg (the browser does the stitching).
+
+---
+
+## System dependencies
+
+The Python deps install automatically (`start.sh` / `start.bat`). One optional **system** tool:
+
+| Tool | Needed for | Install |
+|---|---|---|
+| **ffmpeg** | the command-line `tools/compose.py` only (not the app or web UI) | macOS `brew install ffmpeg` · Debian/Ubuntu `sudo apt install ffmpeg` · Windows `winget install ffmpeg` or [download](https://ffmpeg.org/download.html) |
+
+If ffmpeg is missing, `compose.py` prints a clear message telling you to install it; the app and the
+web-UI Compose keep working without it.
 
 ---
 

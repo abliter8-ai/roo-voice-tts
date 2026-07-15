@@ -74,6 +74,11 @@
   button.speak:hover{box-shadow:0 10px 30px rgba(255,9,58,.5)}
   button.speak:active{transform:translateY(1px)}
   button.speak:disabled{opacity:.45; cursor:default; box-shadow:none}
+  button.speak.alt{background:transparent; color:#fff; border:1px solid #2b2c30; box-shadow:none}
+  button.speak.alt:hover{border-color:var(--red); color:var(--red)}
+  .dl{display:none; margin-top:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12px; letter-spacing:.06em; color:var(--red); text-decoration:none; text-transform:uppercase}
+  .dl.on{display:inline-block} .dl:hover{text-decoration:underline}
   .meta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--mut);
     font-size:12px; letter-spacing:.02em; font-variant-numeric:tabular-nums}
   .badge{margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px;
@@ -100,14 +105,17 @@
   </div>
 
   <div class="card">
-    <textarea id="t" maxlength="600" placeholder="Type something for Roo to say…">After the last dance class, I parked the car beside the garden wall.</textarea>
-    <div class="hint" id="hint">Best with a sentence or two (~15&nbsp;s). Punctuation shapes the pauses — SSML / markup isn't supported.</div>
+    <textarea id="t" maxlength="600" placeholder="Type something for Roo to say…">I'm so glad to be able to opensource my voice so now you can listen to my voice anytime you want. Isn't that amazing?</textarea>
+    <div class="hint" id="hint">Best with a sentence or two (~15&nbsp;s). Punctuation shapes the pauses — SSML / markup isn't supported.
+      <br><b style="color:#a7abb1">Compose</b> generates each line separately and stitches them into one longer clip.</div>
     <div class="row">
       <button class="speak" id="go" onclick="gen()">Speak</button>
+      <button class="speak alt" id="composeBtn" onclick="compose()">Compose</button>
       <span class="meta" id="m">seed 42 · temp 1.0 · top-k 50 · top-p 0.95</span>
       <span class="badge" id="badge">…</span>
     </div>
     <audio id="a" controls></audio>
+    <a id="dl" class="dl" download="roo-voice.wav">Download WAV</a>
   </div>
 
   <div class="foot">Fixed voice — the <b>reference is baked in server-side</b>; you supply only text.
@@ -117,14 +125,23 @@
 <script>
 const avatar=document.getElementById('avatar'), genImg=document.getElementById('genImg'),
       spkImg=document.getElementById('spkImg'), a=document.getElementById('a'),
-      badge=document.getElementById('badge'), m=document.getElementById('m'), go=document.getElementById('go');
+      badge=document.getElementById('badge'), m=document.getElementById('m'),
+      go=document.getElementById('go'), composeBtn=document.getElementById('composeBtn'),
+      dl=document.getElementById('dl'), tEl=document.getElementById('t');
 
+let _ctx=null;
+function actx(){
+  if(!_ctx){ const C=window.AudioContext||window.webkitAudioContext;
+    try{ _ctx=new C({sampleRate:24000}); }catch(e){ _ctx=new C(); } }
+  return _ctx;
+}
 function state(s){ // idle | gen | speak
   avatar.classList.toggle('gen', s==='gen');
   avatar.classList.toggle('speak', s==='speak');
   genImg.style.display = s==='gen' ? 'block':'none';
   spkImg.style.display = s==='speak' ? 'block':'none';
 }
+function busy(b){ go.disabled=b; composeBtn.disabled=b; }
 a.addEventListener('play',()=>state('speak'));
 a.addEventListener('ended',()=>state('idle'));
 a.addEventListener('pause',()=>{ if(a.currentTime>0 && !a.ended) return; state('idle'); });
@@ -133,24 +150,77 @@ fetch('/info').then(r=>r.json()).then(d=>{
   badge.textContent=(d.runtime||'')+' · '+(d.device||'');
 }).catch(()=>{ badge.textContent='ready'; });
 
+function showResult(blob, name){
+  const url=URL.createObjectURL(blob);
+  a.src=url; a.className='on';
+  dl.href=url; dl.setAttribute('download', name); dl.classList.add('on');
+}
+
+async function synth(text){
+  const r=await fetch('/v1/audio/speech',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({input:text})});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return { blob:await r.blob(), gs:r.headers.get('X-Roo-Gen-Seconds'),
+           au:r.headers.get('X-Roo-Audio-Seconds'), rtf:r.headers.get('X-Roo-RTF') };
+}
+
 async function gen(){
-  const txt=document.getElementById('t').value.trim(); if(!txt) return;
-  go.disabled=true; state('gen'); m.textContent='generating…';
+  const txt=tEl.value.trim(); if(!txt) return;
+  busy(true); state('gen'); dl.classList.remove('on'); m.textContent='generating…';
   try{
-    const r=await fetch('/v1/audio/speech',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({input:txt})});
-    if(!r.ok){ m.textContent='error '+r.status; state('idle'); go.disabled=false; return; }
-    const blob=await r.blob(); a.src=URL.createObjectURL(blob); a.className='on';
-    const gs=r.headers.get('X-Roo-Gen-Seconds'), rtf=r.headers.get('X-Roo-RTF'),
-          au=r.headers.get('X-Roo-Audio-Seconds');
+    const {blob,gs,au,rtf}=await synth(txt);
+    showResult(blob,'roo-voice.wav');
     m.textContent=(gs?gs+'s':'')+(au?' · '+au+'s audio':'')+(rtf?' · '+rtf+'x rt':'');
     a.play();
-  }catch(e){ m.textContent='error'; state('idle'); }
-  go.disabled=false;
+  }catch(e){ m.textContent='error — '+e.message; state('idle'); }
+  busy(false);
 }
-document.getElementById('t').addEventListener('keydown',e=>{
-  if((e.metaKey||e.ctrlKey)&&e.key==='Enter') gen();
-});
+
+function splitLines(t){ return t.split(/\n+/).map(s=>s.trim()).filter(Boolean); }
+
+async function compose(){
+  const lines=splitLines(tEl.value);
+  if(lines.length<=1) return gen();               // 0 or 1 line → just speak
+  busy(true); state('gen'); dl.classList.remove('on');
+  const gap=0.35, bufs=[]; let totalGen=0;
+  try{
+    for(let i=0;i<lines.length;i++){
+      m.textContent='composing '+(i+1)+'/'+lines.length+'…';
+      const {blob,gs}=await synth(lines[i]);
+      totalGen+=parseFloat(gs||0);
+      bufs.push(await actx().decodeAudioData(await blob.arrayBuffer()));
+    }
+    const wav=concatToWav(bufs, gap);
+    showResult(wav,'roo-voice-composed.wav');
+    const dur=(bufs.reduce((s,b)=>s+b.duration,0)+gap*(bufs.length-1)).toFixed(1);
+    m.textContent=lines.length+' lines · '+dur+'s · '+totalGen.toFixed(0)+'s to generate';
+    a.play();
+  }catch(e){ m.textContent='compose error — '+e.message; state('idle'); }
+  busy(false);
+}
+
+function concatToWav(bufs, gap){
+  const sr=bufs[0].sampleRate, gapN=Math.round(gap*sr);
+  let total=0; bufs.forEach(b=>total+=b.length); total+=gapN*(bufs.length-1);
+  const out=new Float32Array(total); let off=0;
+  bufs.forEach((b,idx)=>{ out.set(b.getChannelData(0), off); off+=b.length;
+    if(idx<bufs.length-1) off+=gapN; });
+  return encodeWav(out, sr);
+}
+
+function encodeWav(samples, sr){
+  const n=samples.length, buf=new ArrayBuffer(44+n*2), dv=new DataView(buf);
+  const wr=(o,s)=>{ for(let i=0;i<s.length;i++) dv.setUint8(o+i, s.charCodeAt(i)); };
+  wr(0,'RIFF'); dv.setUint32(4,36+n*2,true); wr(8,'WAVE'); wr(12,'fmt ');
+  dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+  dv.setUint32(24,sr,true); dv.setUint32(28,sr*2,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true);
+  wr(36,'data'); dv.setUint32(40,n*2,true);
+  let o=44; for(let i=0;i<n;i++){ const s=Math.max(-1,Math.min(1,samples[i]));
+    dv.setInt16(o, s<0 ? s*0x8000 : s*0x7FFF, true); o+=2; }
+  return new Blob([buf],{type:'audio/wav'});
+}
+
+tEl.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='Enter') gen(); });
 </script>
 </body>
 </html>
