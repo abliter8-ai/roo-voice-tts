@@ -125,6 +125,7 @@ web-UI Compose keep working without it.
 
 ```
 roo-voice-tts-app/
+├── AGENTS.md / CLAUDE.md / GEMINI.md   setup guides for coding agents (Codex, Claude Code, Gemini CLI)
 ├── start.sh / start.bat      one-command launchers (auto-detect hardware)
 ├── reference.wav             the identity reference (required, baked into the server)
 ├── web/index.html            the Roo Voice web UI
