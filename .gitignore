@@ -4,3 +4,12 @@ __pycache__/
 roo-gen.jsonl
 .DS_Store
 assets/.DS_Store
+
+# installer build artifacts (bundled python, dmg, exe, staging)
+installers/macos/build/
+installers/macos/_py/
+installers/windows/staging/
+installers/windows/dist/
+installers/windows/_py-win.tar.gz
+installers/windows/_pyx/
+*.dmg
