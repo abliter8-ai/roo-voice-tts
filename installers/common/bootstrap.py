@@ -32,7 +32,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-ROO_VOICE_VERSION = "1.1.0"
+ROO_VOICE_VERSION = "1.1.1"
 
 CUDA_INDEX = "https://download.pytorch.org/whl/cu128"
 
@@ -48,9 +48,47 @@ def _find_app_dir() -> Path:
 
 
 APP_DIR = _find_app_dir()
-PORT = int(os.environ.get("ROO_PORT", "8080"))
 IS_MAC = sys.platform == "darwin"
 IS_WIN = sys.platform.startswith("win")
+
+
+def _pick_port() -> int:
+    """A port we can actually bind (IP-176.1 — ruinwork already ran node on 8080).
+
+    Must test BOTH address families: ruinwork's node listens on IPv6 (::8080), and
+    an IPv4-only check (the v1.1.0 first cut) wrongly saw 8080 as free and bound it
+    on 127.0.0.1 — two servers on one port, split by family, and `localhost:8080`
+    could resolve to either. A port counts as free only if it binds clean on IPv4
+    *and* IPv6, and we do NOT set SO_REUSEADDR (that would mask a live listener).
+    The launcher opens the browser to whatever we bound — the user never sees a port.
+    """
+    import socket
+    if env := os.environ.get("ROO_PORT"):
+        return int(env)
+
+    def free(p: int) -> bool:
+        for fam, addr in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+            try:
+                s = socket.socket(fam, socket.SOCK_STREAM)
+            except OSError:
+                continue  # family unsupported on this host — ignore it
+            try:
+                s.bind((addr, p))
+            except OSError:
+                s.close()
+                return False
+            s.close()
+        return True
+
+    for p in (8080, 8081, 8188, 8321, 8765, 8808):
+        if free(p):
+            return p
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:  # let the OS choose
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+PORT = _pick_port()
 
 # Brand tokens — lifted from web/index.html so the launcher and the web UI match.
 RED = "#FF093A"
@@ -228,9 +266,41 @@ class Launcher:
                 "Check that an NVIDIA driver is installed and `nvidia-smi` works,\n"
                 "then restart Roo Voice.")
 
+    # ---- download accounting ---------------------------------------------- #
+    def cache_gb(self) -> float:
+        """Symlink-SAFE size of the HF cache in GB.
+
+        The HF cache stores each file once as a content-addressed blob, then
+        builds snapshot dirs out of symlinks to those blobs. Counting both (the
+        v1.1.0 bug) double-counts — 9.6 GB real showed as 19.1 GB. Skip symlinks.
+        """
+        try:
+            total = 0
+            for f in self.hf.rglob("*"):
+                if f.is_symlink() or not f.is_file():
+                    continue
+                try:
+                    total += f.stat().st_size
+                except OSError:
+                    pass
+            return total / 1e9
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    # Rough full-download size per runtime (voice model + its audio codec), GB.
+    DOWNLOAD_TARGET_GB = {"mlx": 9.5, "transformers": 10.5}
+
     # ---- server ----------------------------------------------------------- #
     def start_server(self, vpy: Path, set_status):
-        set_status("Downloading Roo's voice — 2.3 GB, 1–5 min, first run only…")
+        # Baseline the cache so we measure THIS run's download, not absolute size
+        # (a pre-cached machine must not show a phantom "downloading 90%").
+        self.cache_baseline = self.cache_gb()
+        self.download_target = self.DOWNLOAD_TARGET_GB.get(self.runtime, 9.5)
+        if self.cache_baseline >= self.download_target * 0.9:
+            set_status("Loading Roo's voice (already downloaded)…")
+        else:
+            set_status(f"Downloading Roo's voice — a {self.download_target:.0f} GB voice model "
+                       "and audio codec, first run only. Several minutes on a home connection.")
         creationflags = 0x08000000 if IS_WIN else 0
         self._server_fh = open(self.server_log, "a", encoding="utf-8", errors="replace")
         self.proc = subprocess.Popen(
@@ -418,13 +488,29 @@ def _track(s: str, spaces: int = 1) -> str:
 
 
 def gui_main():
+    """Canvas-only launcher.
+
+    IP-176.1 — macOS Tk renders native widgets (Button, OptionMenu) in default
+    system chrome and ignores bg/fg, so v1.1.0 shipped a white dropdown and a grey
+    Start button on a black theme. EVERYTHING here is drawn on the Canvas — buttons
+    are rectangles + text + click bindings — so brand colours actually apply.
+
+    It also AUTO-STARTS (auto-detect = the 4-bit default), so there is no dropdown
+    and no Start click: launch → setup → the browser opens itself when ready, and a
+    large "Open Roo Voice" button appears as a fallback. Manual runtime selection is
+    via ROO_RUNTIME / ROO_MODEL for power users.
+    """
     import tkinter as tk
 
     root = tk.Tk()
     root.title("Roo Voice")
     root.configure(bg=BLACK)
-    W, H = 560, 460
-    root.geometry(f"{W}x{H}")
+    W, H = 620, 440
+    try:
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.geometry(f"{W}x{H}+{(sw - W) // 2}+{(sh - H) // 3}")
+    except Exception:  # noqa: BLE001
+        root.geometry(f"{W}x{H}")
     root.resizable(False, False)
 
     display = _register_bundled_font()
@@ -434,7 +520,6 @@ def gui_main():
     canvas = tk.Canvas(root, width=W, height=H, highlightthickness=0, bd=0, bg=BLACK)
     canvas.pack(fill="both", expand=True)
 
-    # Background image + scrim (Tk 9 reads PNG natively).
     bg_img = None
     bgp = APP_DIR / "assets" / "background-16x9.png"
     if bgp.is_file():
@@ -443,105 +528,152 @@ def gui_main():
             factor = max(1, int(src.width() / W) or 1)
             bg_img = src.subsample(factor, factor)
             canvas.create_image(W // 2, H // 2, image=bg_img)
+            canvas.create_rectangle(0, 0, W, H, fill=BLACK, stipple="gray75", outline="")
         except Exception:  # noqa: BLE001
             bg_img = None
-    canvas.create_rectangle(0, 0, W, H, fill=BLACK, stipple="gray50", outline="")
 
     # Brand lockup: ● abliter8 · voice
-    canvas.create_oval(40, 33, 47, 40, fill=RED, outline="")
-    canvas.create_text(56, 36, anchor="w", text=_track("ABLITER8 · VOICE"),
-                       fill=RED, font=(fam_sans, 9, "bold"))
-    # Wordmark: ROO.VOICE with the stop in red
-    canvas.create_text(W // 2 - 8, 92, text="ROO", anchor="e",
-                       fill="#ffffff", font=(fam_display, 54))
-    canvas.create_text(W // 2 - 6, 92, text=".", anchor="w",
-                       fill=RED, font=(fam_display, 54))
-    canvas.create_text(W // 2 + 8, 92, text="VOICE", anchor="w",
-                       fill="#ffffff", font=(fam_display, 54))
+    canvas.create_oval(46, 39, 54, 47, fill=RED, outline="")
+    canvas.create_text(64, 43, anchor="w", text=_track("ABLITER8 · VOICE"),
+                       fill=RED, font=(fam_sans, 10, "bold"))
+    # Wordmark: ROO.VOICE, stop in red
+    wm = 64
+    canvas.create_text(W // 2 - 10, 108, text="ROO", anchor="e", fill="#ffffff",
+                       font=(fam_display, wm))
+    canvas.create_text(W // 2 - 9, 112, text=".", anchor="w", fill=RED, font=(fam_display, wm))
+    canvas.create_text(W // 2 + 14, 108, text="VOICE", anchor="w", fill="#ffffff",
+                       font=(fam_display, wm))
+    canvas.create_text(W // 2, 152, text="the local voice of Roo", fill=MUTED,
+                       font=(fam_sans, 11))
 
     # Card
-    canvas.create_rectangle(34, 140, W - 34, H - 74, fill=CARD, outline=LINE)
+    CT, CB = 182, H - 34
+    canvas.create_rectangle(40, CT, W - 40, CB, fill=CARD, outline=LINE, width=1)
 
-    status_id = canvas.create_text(W // 2, 250, text="", fill="#ffffff",
-                                   font=(fam_sans, 11), width=W - 110, justify="center")
-    phase_id = canvas.create_text(W // 2, 174, text="", fill=MUTED, font=(fam_sans, 9))
+    phase_id = canvas.create_text(W // 2, CT + 26, text=_track("STARTING"), fill=RED,
+                                  font=(fam_sans, 10, "bold"))
+    status_id = canvas.create_text(W // 2, CT + 78, text="Preparing…", fill="#e9eaec",
+                                   font=(fam_sans, 12), width=W - 130, justify="center")
 
-    # Determinate progress bar, drawn by hand in brand colours
-    BX0, BX1, BY = 70, W - 70, 320
-    canvas.create_rectangle(BX0, BY, BX1, BY + 5, fill=LINE, outline="")
-    bar_id = canvas.create_rectangle(BX0, BY, BX0, BY + 5, fill=RED, outline="")
+    BX0, BX1, BY = 78, W - 78, CB - 96
+    canvas.create_rectangle(BX0, BY, BX1, BY + 6, fill=LINE, outline="")
+    bar_id = canvas.create_rectangle(BX0, BY, BX0, BY + 6, fill=RED, outline="")
     pct_id = canvas.create_text(W // 2, BY + 24, text="", fill=MUTED, font=(fam_sans, 9))
 
-    state = {"L": None, "target": 0.0, "shown": 0.0, "running": False, "t0": time.time()}
+    state = {"L": None, "target": 0.0, "shown": 0.0, "running": True, "t0": time.time(),
+             "phase": "starting"}
 
-    PHASES = [("Environment", 0.06), ("Dependencies", 0.34),
-              ("Downloading the voice", 0.62), ("Warming up", 0.97)]
+    # Phase -> bar floor. Download is the long pole; the watcher below fills it live.
+    PHASES = [("environment", 0.05), ("installing pytorch", 0.14),
+              ("installing dependencies", 0.30), ("downloading", 0.40),
+              ("warming", 0.90)]
 
     def set_bar(frac: float):
         state["target"] = max(state["target"], min(frac, 1.0))
 
     def animate():
         if state["shown"] < state["target"]:
-            state["shown"] += min(0.012, state["target"] - state["shown"])
+            state["shown"] += max(0.004, (state["target"] - state["shown"]) * 0.08)
+            state["shown"] = min(state["shown"], state["target"])
         w = BX0 + (BX1 - BX0) * state["shown"]
-        canvas.coords(bar_id, BX0, BY, w, BY + 5)
+        canvas.coords(bar_id, BX0, BY, w, BY + 6)
         if state["running"]:
             el = int(time.time() - state["t0"])
-            canvas.itemconfig(pct_id, text=f"{int(state['shown']*100)}%   ·   {el//60}m {el%60}s elapsed")
-        root.after(40, animate)
+            canvas.itemconfig(pct_id, text=f"{int(state['shown']*100)}%   ·   {el//60}m {el%60:02d}s")
+        root.after(33, animate)
 
     def set_status(msg: str):
         if state["L"]:
             state["L"].status = msg
         low = msg.lower()
-        for name, frac in PHASES:
-            if name.lower().split()[0] in low:
+        for key, frac in PHASES:
+            if key in low:
                 set_bar(frac)
-                root.after(0, lambda n=name: canvas.itemconfig(phase_id, text=_track(n.upper())))
+                label = ("WARMING UP" if key == "warming" else
+                         "DOWNLOADING" if key == "downloading" else key.upper())
+                root.after(0, lambda t=label: canvas.itemconfig(phase_id, text=_track(t)))
+                if key == "downloading":
+                    state["phase"] = "downloading"
+                elif key == "warming":
+                    state["phase"] = "warming"
                 break
-        root.after(0, lambda: canvas.itemconfig(status_id, text=msg))
+        root.after(0, lambda: canvas.itemconfig(status_id, text=msg, fill="#e9eaec"))
 
-    widgets: list = []
+    def watch_download():
+        # Real byte-progress during the download phase — SYMLINK-SAFE (v1.1.0
+        # counted HF's blobs and their snapshot symlinks, so 9.6 GB showed as
+        # "19.1 GB of 9 GB"). Also skips cleanly when the model is already cached
+        # (a pre-cached machine must not show a phantom download).
+        L = state["L"]
+        if L and getattr(L, "cache_baseline", None) is not None and not state.get("dl_done"):
+            target = getattr(L, "download_target", 9.5)
+            cached = L.cache_baseline >= target * 0.9
+            gb = L.cache_gb()
+            if cached:
+                # Nothing to download — briefly show loading, let /healthz take over.
+                set_bar(0.86)
+                root.after(0, lambda: canvas.itemconfig(phase_id, text=_track("LOADING")))
+                root.after(0, lambda: canvas.itemconfig(
+                    status_id, text="Loading Roo's voice — already downloaded.", fill="#e9eaec"))
+            elif state["phase"] in ("downloading", "starting"):
+                frac = min(gb / target, 1.0)
+                set_bar(0.40 + 0.48 * frac)
+                root.after(0, lambda: canvas.itemconfig(phase_id, text=_track("DOWNLOADING")))
+                root.after(0, lambda g=gb, t=target: canvas.itemconfig(
+                    status_id, text=f"Downloading Roo's voice — {g:.1f} GB of ~{t:.0f} GB.\n"
+                                    "First run only; several minutes on a home connection.",
+                    fill="#e9eaec"))
+            if state["phase"] in ("warming", "ready"):
+                state["dl_done"] = True
+        root.after(1500, watch_download)
 
-    def clear_widgets():
-        for w in widgets:
-            w.destroy()
-        widgets.clear()
+    def rounded_button(cx, cy, text, cmd, primary=True, w=220, h=46):
+        x0, y0, x1, y1 = cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2
+        fill = RED if primary else CARD
+        tag = f"btn{len(btn_tags)}"
+        rect = canvas.create_rectangle(x0, y0, x1, y1, fill=fill,
+                                       outline=RED if primary else "#3a3b40", width=1, tags=tag)
+        txt = canvas.create_text(cx, cy, text=text, fill="#ffffff",
+                                 font=(fam_display, 17) if display else (fam_sans, 13, "bold"),
+                                 tags=tag)
+        def enter(_): canvas.itemconfig(rect, fill="#c60830" if primary else LINE); canvas.config(cursor="hand2")
+        def leave(_): canvas.itemconfig(rect, fill=fill); canvas.config(cursor="")
+        canvas.tag_bind(tag, "<Enter>", enter)
+        canvas.tag_bind(tag, "<Leave>", leave)
+        canvas.tag_bind(tag, "<Button-1>", lambda _: cmd())
+        btn_tags.append((rect, txt))
+        return tag
 
-    def brand_button(text, cmd, x, y, primary=True):
-        b = tk.Button(root, text=text, command=cmd,
-                      bg=RED if primary else CARD, fg="#ffffff",
-                      activebackground="#c60830" if primary else LINE,
-                      activeforeground="#ffffff",
-                      relief="flat", bd=0, highlightthickness=0,
-                      font=(fam_display, 15) if display else (fam_sans, 11, "bold"),
-                      padx=22, pady=7, cursor="hand2")
-        w = canvas.create_window(x, y, window=b)
-        widgets.append(b)
-        return b, w
+    btn_tags: list = []
+
+    def clear_buttons():
+        for rect, txt in btn_tags:
+            canvas.delete(rect); canvas.delete(txt)
+        btn_tags.clear()
 
     def on_ready(url):
         def apply():
             state["running"] = False
             set_bar(1.0)
-            canvas.itemconfig(phase_id, text=_track("READY"))
-            canvas.itemconfig(status_id, text=state["L"].settled_estimate())
+            canvas.itemconfig(phase_id, text=_track("READY"), fill="#3ddc84")
+            canvas.itemconfig(status_id, text=state["L"].settled_estimate() +
+                              "\nYour browser should have opened. If not, click below.",
+                              fill="#e9eaec")
             canvas.itemconfig(pct_id, text="")
-            clear_widgets()
-            brand_button("Open Roo Voice", lambda: webbrowser.open(url), W // 2 - 78, H - 42)
-            brand_button("Save report", save_report, W // 2 + 84, H - 42, primary=False)
+            clear_buttons()
+            rounded_button(W // 2 - 118, BY + 48, "Open Roo Voice", lambda: webbrowser.open(url), primary=True)
+            rounded_button(W // 2 + 118, BY + 48, "Save report", save_report, primary=False, w=180)
         root.after(0, apply)
+        webbrowser.open(url)   # open for the user; the button is a fallback
 
     def on_fail(msg):
         def apply():
             state["running"] = False
-            canvas.itemconfig(phase_id, text=_track("PROBLEM"))
-            canvas.itemconfig(status_id, text=msg, fill="#ff6b6b")
+            canvas.itemconfig(phase_id, text=_track("PROBLEM"), fill="#ff6b6b")
+            canvas.itemconfig(status_id, text=msg, fill="#ff9a9a")
             canvas.itemconfig(pct_id, text="")
-            canvas.coords(bar_id, BX0, BY, BX0, BY + 5)
-            clear_widgets()
-            # On failure the report button is the point of the whole screen.
-            brand_button("Save diagnostics report", save_report, W // 2, H - 42)
+            clear_buttons()
+            rounded_button(W // 2, BY + 48, "Save diagnostics report", save_report, primary=True, w=260)
         root.after(0, apply)
 
     def save_report():
@@ -550,57 +682,34 @@ def gui_main():
             return
         try:
             p = L.write_report()
-            canvas.itemconfig(status_id, text=f"Report saved to:\n{p}\n\nSend that file to David.",
-                              fill="#ffffff")
+            canvas.itemconfig(status_id, text=f"Report saved to your Desktop:\n{p.name}\n"
+                                              "Send that file to David.", fill="#e9eaec")
             if IS_MAC:
                 subprocess.run(["open", "-R", str(p)], check=False)
             elif IS_WIN:
                 subprocess.run(["explorer", "/select,", str(p)], check=False)
         except Exception as e:  # noqa: BLE001
-            canvas.itemconfig(status_id, text=f"Could not write the report: {e}", fill="#ff6b6b")
-
-    # ---- selector screen ----
-    sel_label = canvas.create_text(W // 2, 176, text=_track("CHOOSE YOUR RUNTIME"),
-                                   fill="#ffffff", font=(fam_sans, 9, "bold"))
-    var = tk.StringVar(value=RUNTIME_CHOICES[0][0])
-    om = tk.OptionMenu(root, var, *[c[0] for c in RUNTIME_CHOICES])
-    om.configure(bg=CARD, fg="#ffffff", activebackground=LINE, activeforeground="#fff",
-                 relief="flat", bd=0, highlightthickness=1, highlightbackground=LINE,
-                 font=(fam_sans, 11), width=34, cursor="hand2")
-    om["menu"].configure(bg=CARD, fg="#ffffff", activebackground=RED, font=(fam_sans, 11))
-    om_win = canvas.create_window(W // 2, 210, window=om)
-    hint_id = canvas.create_text(W // 2, 248,
-                                 text="Auto-detect picks the 4-bit build for your machine.\n"
-                                      "Choose manually only if you know your hardware.",
-                                 fill=MUTED, font=(fam_sans, 9), justify="center")
-
-    def start():
-        label = var.get()
-        choice = dict(RUNTIME_CHOICES)[label]
-        L = Launcher(choice)
-        state["L"] = L
-        state["running"] = True
-        state["t0"] = time.time()
-        canvas.delete(sel_label); canvas.delete(hint_id)
-        canvas.delete(om_win); om.destroy()
-        clear_widgets()
-        canvas.itemconfig(status_id, text="Starting…")
-        threading.Thread(target=L.setup_and_launch,
-                         args=(set_status, on_ready, on_fail), daemon=True).start()
-
-    brand_button("Start", start, W // 2, H - 42)
+            canvas.itemconfig(status_id, text=f"Could not write the report: {e}", fill="#ff9a9a")
 
     def on_close():
         L = state["L"]
         if L:
-            canvas.itemconfig(status_id, text="Stopping…")
+            canvas.itemconfig(status_id, text="Stopping…", fill="#e9eaec")
             threading.Thread(target=lambda: (L.stop(), root.after(0, root.destroy)),
                              daemon=True).start()
         else:
             root.destroy()
 
+    # ---- auto-start: no dropdown, no Start click ----
+    L = Launcher()                      # auto-detect (4-bit default)
+    state["L"] = L
+    canvas.itemconfig(status_id, text=f"Setting up the {L.runtime.upper()} voice for your machine…")
+    threading.Thread(target=L.setup_and_launch,
+                     args=(set_status, on_ready, on_fail), daemon=True).start()
+
     root.protocol("WM_DELETE_WINDOW", on_close)
     animate()
+    watch_download()
     root.mainloop()
 
 

@@ -49,7 +49,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-ROO_VOICE_VERSION = "1.1.0"
+ROO_VOICE_VERSION = "1.1.1"
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = REPO_ROOT / "web"
