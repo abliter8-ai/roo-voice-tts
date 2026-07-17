@@ -1,8 +1,9 @@
 # Roo Voice — Apple Silicon (MLX) runtime.
-# Installed automatically by ./start.sh on an Apple Silicon Mac.
+# Installed automatically by ./start.sh (or the app launcher) on an Apple Silicon Mac.
 mlx-audio>=0.4.3
 huggingface-hub>=0.25
 fastapi>=0.110
 uvicorn>=0.27
 numpy>=1.24
 soundfile>=0.12
+scipy>=1.10               # reference resampling (48k stereo -> 24k mono)

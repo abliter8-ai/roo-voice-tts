@@ -8,6 +8,10 @@ REPO="$(cd "$HERE/../.." && pwd)"
 BUILD="$HERE/build"
 APPNAME="Roo Voice"
 APP="$BUILD/$APPNAME.app"
+# Single-source the version from the app code so Info.plist can't drift (IP-176 §9.1).
+VERSION="$(sed -n 's/^ROO_VOICE_VERSION = "\(.*\)"/\1/p' "$REPO/installers/common/bootstrap.py" | head -1)"
+[ -n "$VERSION" ] || { echo "could not read ROO_VOICE_VERSION from bootstrap.py"; exit 1; }
+echo "==> building Roo Voice $VERSION"
 PY_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.12.13%2B20260623-aarch64-apple-darwin-install_only.tar.gz"
 PY_TGZ="$HERE/_py/python-mac.tar.gz"
 
@@ -64,8 +68,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Roo Voice</string>
   <key>CFBundleDisplayName</key><string>Roo Voice</string>
   <key>CFBundleIdentifier</key><string>ai.abliter8.roo-voice</string>
-  <key>CFBundleVersion</key><string>1.0.0</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleExecutable</key><string>roo-voice</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>

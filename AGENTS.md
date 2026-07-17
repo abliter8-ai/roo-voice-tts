@@ -42,8 +42,8 @@ Change the port with `PORT=8090 ./start.sh`.
 
 | Hardware | Model | Approx. memory |
 |---|---|---|
-| Apple Silicon (M1–M4) | MLX 8-bit, ~3.6 GB | ~5 GB unified |
-| NVIDIA Turing+ (RTX 20-series and newer) | INT8, ~4.3 GB | ~6 GB VRAM |
+| Apple Silicon (M1–M4) | MLX 4-bit, ~2.3 GB (default) | ~4 GB unified |
+| NVIDIA Turing+ (RTX 20-series and newer) | INT4 NF4, ~3.5 GB (default) | ~4 GB VRAM |
 | NVIDIA, full precision | BF16, ~5.8 GB | ~9–10 GB VRAM |
 
 No Intel-Mac, AMD-GPU, or CPU-practical path — generation on CPU is far too slow to use.
@@ -56,11 +56,11 @@ python -m pip install -U pip
 # Apple Silicon:
 python -m pip install -r server/requirements-mlx.txt
 python server/roo_serve.py --runtime mlx \
-  --model abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx8 --reference reference.wav --port 8080
+  --model abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4 --reference reference.wav --port 8080
 # NVIDIA:
 python -m pip install -r server/requirements-cuda.txt
 python server/roo_serve.py --runtime transformers \
-  --model abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8 \
+  --model abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4 \
   --codec OpenMOSS-Team/MOSS-Audio-Tokenizer --reference reference.wav --port 8080
 ```
 
@@ -75,18 +75,34 @@ python server/roo_serve.py --runtime transformers \
 
 ## Troubleshooting (common, in order of likelihood)
 
+**Step 1 — get the diagnostics report. Do not theorise from a description.**
+
+- Launcher → **Save report** (it appears automatically on failure) → `~/Desktop/roo-voice-report.txt`
+- Or, while running: `curl -s localhost:8080/diagnostics`
+- Or the logs: `~/Library/Application Support/Roo Voice/logs/` (macOS) · `%LOCALAPPDATA%\Roo Voice\logs\` (Windows)
+
+It carries hardware, chip, RAM, runtime, model, quantisation, torch/mlx versions,
+`torch.cuda.is_available()`, the device actually in use, warm-up seconds, recent generation timings
+and full tracebacks. Home paths are redacted to `~`. Both v1.0 field reports were misdiagnosed as
+model bugs and would have been obvious from this file.
+
+
 1. **`transformers` version error / `generate` fails on NVIDIA** — it must be pinned to `5.0.0`
    (the model's remote code). `requirements-cuda.txt` pins it; don't upgrade it.
 2. **`bitsandbytes` / CUDA import error** — the user isn't on a CUDA GPU, or the torch/CUDA build
    mismatches. Confirm `nvidia-smi` shows a GPU.
 3. **Blackwell (RTX 50-series) fails to use the GPU** — install the CUDA 12.8 PyTorch first:
    `pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128`, then re-run.
-4. **Out of memory (NVIDIA)** — use the INT8 model (default), close other GPU apps.
+4. **Out of memory (NVIDIA)** — the INT4 model is the default and the smallest; close other GPU apps.
 5. **`ffmpeg not found`** — only affects the CLI `tools/compose.py`. Install ffmpeg
    (`brew install ffmpeg` / `apt install ffmpeg` / `winget install ffmpeg`). The app and UI don't need it.
 6. **Port already in use** — set `PORT=...`.
-7. **Slow first generation** — model warm-up; later generations settle (~2.5× real-time on Apple
-   Silicon, ~7× on a mid-range NVIDIA card).
+7. **Slow first run** — the server now WARMS UP before reporting ready (IP-176), so the cold
+   kernel-compile cost is paid at startup, not on the user's first sentence. Warm-up takes ~4–5 min
+   on a MacBook Air, <1 min on a Mac Studio, once (kernels are cached afterwards).
+   Measured settled speed per sentence (~4.4 s of audio), 2026-07-17:
+   **Mac Studio M1 Max ~10–11 s (2.6×) · MacBook Air M4 ~55 s (12×) · RTX 5060 Ti INT4 ~15 s (3.5×)**.
+   ~55 s on an Air-class Mac is normal, not a fault.
 
 ## Do NOT
 

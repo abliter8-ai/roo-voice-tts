@@ -60,20 +60,36 @@ voice — they differ only in quantization and runtime.
 
 | Your hardware | Recommended build | Size | Memory | Runtime | Auto? |
 |---|---|---|---|---|---|
-| **Apple Silicon** (M1–M4) | [`…_mlx4`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4) — MLX 4-bit *(default)* | 2.3 GB | ~4 GB unified | `mlx-audio` | ✅ |
+| **Apple Silicon** (M1–M4) | [`…_mlx4`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4) — MLX 4-bit *(default)* | 2.3 GB | ~4 GB unified | `mlx-audio` | ✅ verified |
 | Apple Silicon, more headroom | [`…_mlx8`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx8) — MLX 8-bit | 3.6 GB | ~5 GB unified | `mlx-audio` | opt-in |
-| **NVIDIA GPU** (Turing+/RTX 20-series+) | [`…_int4`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4) — NF4 4-bit *(default)* | 3.5 GB | ~4 GB VRAM | `transformers` + `bitsandbytes` | ✅ |
+| **NVIDIA GPU** (Turing+/RTX 20-series+) | [`…_int4`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4) — NF4 4-bit *(default)* | 3.5 GB | ~4 GB VRAM | `transformers` + `bitsandbytes` | ✅ verified |
 | NVIDIA, more headroom | [`…_int8`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_int8) / [`…_bf16`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_bf16) | 4.5 / 6.1 GB | ~6 / ~10 GB VRAM | `transformers` | opt-in |
-| **AMD Radeon** (RDNA3/3.5/4, iGPU or dGPU) | [`…_GGUF`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_GGUF) — Q4_K_M | 1.76 GB | Vulkan/ROCm | llama.cpp (Vulkan) | manual |
-| **Any GPU / CPU, one file** | [`…_GGUF`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_GGUF) — Q4_K_M | 1.76 GB | GPU or RAM | llama.cpp (Vulkan/ROCm/CUDA/Metal) | manual |
-| **NPU** (Ryzen AI XDNA2, Snapdragon Hexagon) | [`…_onnx`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_onnx) | — | — | onnxruntime (VitisAI/QNN EP) | manual |
+| **AMD Radeon** (RDNA3/3.5/4, iGPU or dGPU) | [`…_GGUF`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_GGUF) — Q4_K_M | 1.76 GB | Vulkan/ROCm | llama.cpp (Vulkan) | ⚠️ **unverified** |
+| **Any GPU / CPU, one file** | [`…_GGUF`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_GGUF) — Q4_K_M | 1.76 GB | GPU or RAM | llama.cpp (Vulkan/ROCm/CUDA/Metal) | ⚠️ **unverified** |
+| **NPU** (Ryzen AI XDNA2, Snapdragon Hexagon) | [`…_onnx`](https://huggingface.co/abliter8-ai/Roo-Voice_MOSS_TTS_LT_onnx) | — | — | onnxruntime (VitisAI/QNN EP) | ⚠️ **unverified** |
+
+> **"verified" means we ran it and measured it** — Apple Silicon on an M1 Max and an M4 Air, NVIDIA on
+> an RTX 5060 Ti. The rows marked **unverified** are architecturally sound but have not been run
+> end-to-end by us; treat them as recipes, not promises.
 
 **Picking by GPU vendor — the honest version:**
 
 - **Apple Silicon → MLX.** MLX is Apple-only; the 4-bit is the same voice as the 8-bit, 1.3 GB lighter.
-- **NVIDIA → int4/int8 (bitsandbytes) or GGUF.** `bitsandbytes` needs CUDA. Blackwell (RTX 50-series):
-  install the CUDA 12.8 PyTorch build first (see `server/requirements-cuda.txt`). Native **NVFP4** is a
+- **NVIDIA → int4/int8 (bitsandbytes) or GGUF.** `bitsandbytes` needs CUDA. Native **NVFP4** is a
   future Blackwell-only option.
+
+  > ### ⚠️ Windows: `pip install torch` gives you a **CPU-only** PyTorch
+  >
+  > PyPI's Windows torch wheel is ~122 MB and contains **no CUDA**. The real CUDA build is ~2.5 GB and
+  > exists only on PyTorch's own index. Install it explicitly:
+  >
+  > ```
+  > pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+  > ```
+  >
+  > `start.bat` now does this for you and **verifies** it. This was the cause of the v1.0 Windows bug
+  > where the app loaded, reported healthy, opened the UI, and never produced speech — it was silently
+  > running on CPU. **v1.1.0 refuses to start rather than falling back to CPU.**
 - **AMD Radeon → GGUF via llama.cpp (Vulkan).** `bitsandbytes` is NVIDIA-first and unreliable on consumer
   Radeon, so **don't** use the int4/int8 builds on AMD — use the GGUF with llama.cpp's **Vulkan** backend
   (works on RDNA iGPUs like the 890M and dGPUs; ROCm is an option on supported cards). This is also the
@@ -104,20 +120,33 @@ repetition penalty 1.1, 32 RVQ codebooks, 24 kHz mono.
 
 ## How fast is it? (time-to-speech)
 
-Generation is autoregressive, so wall-clock time scales with the **length of the audio** produced.
-Rough measured guidance (a short one-sentence clip is ~3–5 s of audio):
+Generation is autoregressive, so wall-clock time scales with the **length of the audio** produced —
+and it is **slower than real-time on every machine**. Plan for the wait; this is not a streaming voice.
 
-| Hardware | Generation time | A one-sentence clip takes |
+**These are measured, on the named hardware, not estimates** (2026-07-17, v1.1.0, one-sentence clip
+≈ 4.4 s of audio):
+
+| Hardware | Per-sentence | Real-time factor |
 |---|---|---|
-| **Apple Silicon** (M1 Max, warm) | ~2.5× the clip's length | **~10–13 s** |
-| **NVIDIA INT8** (RTX 5060 Ti) | ~7× the clip's length | **~30–40 s** |
+| **Mac Studio** (M1 Max, 32-core GPU) | **~10–11 s** | ~2.6× |
+| **MacBook Air** (M4, 10-core GPU, 16 GB) | **~55 s** | ~12× |
+| **NVIDIA RTX 5060 Ti** (INT4 NF4) | **~15 s** | ~3.5× |
 | Bigger NVIDIA cards (4090 / A100 …) | less | proportionally quicker |
 
-(i.e. producing ~4 s of audio takes ~2.5× that on Apple Silicon — it's slower than real-time, so plan
-for the wait rather than streaming.)
+Your Mac's GPU core count matters far more than its generation: an M4 Air is ~4× slower than an
+M1 Max here, because it has ~⅓ the GPU cores. **If you're on a Air-class machine, ~55 s per sentence
+is normal and expected — it is not broken.**
 
-The **first** generation after the server starts is slower (model warm-up); subsequent ones settle to
-the numbers above. Keeping inputs short (~15 s) also keeps each generation snappy.
+### The first run is slow, once
+
+On first launch the app **warms up** before the UI opens: it compiles GPU kernels for your machine,
+which takes **~4–5 minutes on a MacBook Air** and **under a minute on a Mac Studio**. The launcher
+shows this with a progress bar and tells you what it's doing.
+
+This is deliberate. That cost is unavoidable the first time — but it's paid *before* you click Speak,
+not on your first sentence. (In v1.0 it was not: the first generation on an M4 Air took **6 minutes
+40 seconds**, which is why the app looked frozen. See `docs/` IP-176.) The compiled kernels are cached,
+so later launches warm up in ~10–15 s.
 
 ---
 
@@ -189,6 +218,29 @@ curl -X POST http://localhost:8080/v1/audio/speech \
   -d '{"input":"After the last dance class, I parked the car beside the garden wall."}' \
   --output roo.wav
 ```
+
+---
+
+## Something wrong? Send a report
+
+Don't describe the symptom — **send the file**. Roo Voice writes a diagnostics report with everything
+needed to diagnose it (hardware, runtime, model, versions, timings, and the actual error):
+
+- **In the launcher window:** click **Save report** (it appears automatically if anything fails).
+- **Or, while it's running:** open <http://localhost:8080/diagnostics>
+- **Or grab the logs directly:**
+  - macOS: `~/Library/Application Support/Roo Voice/logs/`
+  - Windows: `%LOCALAPPDATA%\Roo Voice\logs\`
+
+The report lands on your **Desktop** as `roo-voice-report.txt`. Your home directory is redacted to `~`
+and anything token-shaped is stripped, so it's safe to paste or attach.
+
+Two things worth checking before reporting:
+
+| Symptom | Likely cause |
+|---|---|
+| "It's stuck on the first run" | It's warming up — **~4–5 min on a MacBook Air**, once. The progress bar is telling the truth. |
+| "A sentence takes ~55 s" | Normal on an Air-class Mac. See the speed table above. |
 
 ---
 

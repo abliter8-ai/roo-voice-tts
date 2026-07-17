@@ -1,18 +1,30 @@
-# Roo Voice — NVIDIA GPU (transformers) runtime, INT8 or BF16.
-# Installed automatically by ./start.sh (or start.bat) on a machine with an NVIDIA GPU.
+# Roo Voice — NVIDIA GPU (transformers) runtime: INT4 (default), INT8, or BF16.
 #
-# torch/torchaudio: the default wheels bundle CUDA and work on most NVIDIA GPUs
-# (RTX 20/30/40, Ampere/Ada). If you have a Blackwell card (RTX 50-series) install
-# the CUDA 12.8 build first:
-#     pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-torch>=2.4
-torchaudio>=2.4
+# ############################################################################
+# #  DO NOT add `torch` / `torchaudio` to this file.                         #
+# ############################################################################
+#
+# torch is installed SEPARATELY, from the PyTorch CUDA index — never from PyPI.
+#
+# Why (IP-176 RC2 — this shipped as a real bug):
+#   PyPI's win_amd64 torch wheel is ~122 MB and is CPU-ONLY. The CUDA build is
+#   ~2.5 GB and exists only on download.pytorch.org. A plain `pip install torch`
+#   on Windows therefore yields a torch with no CUDA, the app silently ran on
+#   CPU, and users reported "it loads but never generates speech".
+#   (On Linux, PyPI's torch pulls the nvidia-* CUDA deps, which is why this was
+#   invisible to us locally.)
+#
+# The launchers (start.sh / start.bat / bootstrap.py) install torch first via:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+# and then assert torch.version.cuda is not None before continuing.
+#
 # transformers is PINNED: the model's remote code targets 5.0.0.
 transformers==5.0.0
-bitsandbytes>=0.43        # required for the INT8 model (ignored by BF16)
+bitsandbytes>=0.43        # required for the INT4/INT8 models (ignored by BF16)
 accelerate>=0.30
 sentencepiece>=0.2
 soundfile>=0.12
+scipy>=1.10               # reference resampling (48k stereo -> 24k mono)
 librosa>=0.10
 huggingface-hub>=0.25
 fastapi>=0.110
