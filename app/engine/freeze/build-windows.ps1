@@ -36,7 +36,7 @@ $Tmp = Join-Path $env:TEMP "espeak-extract"
 Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $Tmp | Out-Null
 $Msi = Join-Path $Tmp "espeak-ng.msi"
-Invoke-WebRequest -Uri "https://github.com/espeak-ng/espeak-ng/releases/download/$EspeakVer/espeak-ng-X64.msi" -OutFile $Msi
+Invoke-WebRequest -Uri "https://github.com/espeak-ng/espeak-ng/releases/download/$EspeakVer/espeak-ng.msi" -OutFile $Msi
 Start-Process msiexec -ArgumentList "/a `"$Msi`" /qn TARGETDIR=`"$Tmp\x`"" -Wait
 $EspeakRoot = Get-ChildItem -Recurse -Path "$Tmp\x" -Filter "espeak-ng.dll" | Select-Object -First 1
 if (-not $EspeakRoot) { throw "espeak-ng.dll not found in MSI extract" }

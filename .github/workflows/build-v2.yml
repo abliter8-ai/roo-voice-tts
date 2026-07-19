@@ -70,12 +70,24 @@ jobs:
             chmod 600 /tmp/asc-key.p8
           fi
 
+      - name: Export updater signing key when configured
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          # Passing an EMPTY env var makes tauri try (and fail) to parse it —
+          # CI run 29686559249. Export only when the secret exists; the key
+          # file is multi-line (comment + base64), hence the heredoc form.
+          if [ -n "$KEY" ]; then
+            { echo "TAURI_SIGNING_PRIVATE_KEY<<__ROO_EOF__"
+              echo "$KEY"
+              echo "__ROO_EOF__"; } >> "$GITHUB_ENV"
+          fi
+
       - name: Build app (and release on tag)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}

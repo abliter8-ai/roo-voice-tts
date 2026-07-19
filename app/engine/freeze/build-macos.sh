@@ -57,16 +57,38 @@ if otool -L "$OUT/libespeak-ng.dylib" | grep -q /opt/homebrew; then
   echo "FATAL: homebrew paths still referenced in vendored espeak" >&2; exit 1
 fi
 
-echo "== [3/4] official llama-server ${LLAMA_TAG} =="
-TMP="$(mktemp -d)"
-curl -sL -o "$TMP/llama.tgz" \
-  "https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_TAG}/llama-${LLAMA_TAG}-bin-macos-arm64.tar.gz"
-tar -xzf "$TMP/llama.tgz" -C "$TMP"
-LBIN="$(find "$TMP" -name llama-server -type f | head -1)"
-LDIR="$(dirname "$LBIN")"
-cp "$LBIN" "$OUT/"
-find "$LDIR" -maxdepth 1 \( -name '*.dylib' -o -name '*.metallib' \) -exec cp {} "$OUT/" \;
+echo "== [3/4] llama-server ${LLAMA_TAG} — SOURCE build, static, floor macOS ${MACOS_FLOOR:-14.0} =="
+# CI shakedown finding (run 29686559249): the official macos-arm64 release
+# binaries carry deployment target macOS 26 and dyld-abort on anything older
+# (_OBJC_CLASS_$_MTLResidencySetDescriptor). Building from source with an
+# explicit deployment target weak-links the new-OS Metal APIs; static libs +
+# embedded metallib give ONE self-contained binary (simpler nested signing).
+SRC="${LLAMA_SRC:-$ENGINE_DIR/build/llama.cpp-src}"
+if [ ! -d "$SRC/.git" ]; then
+  git clone --quiet --depth 1 --branch "$LLAMA_TAG" \
+    https://github.com/ggml-org/llama.cpp "$SRC"
+fi
+cmake -S "$SRC" -B "$SRC/build" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_FLOOR:-14.0}" \
+  -DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON \
+  -DLLAMA_CURL=OFF -DLLAMA_SERVER_SSL=OFF -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=ON \
+  -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
+  -DLLAMA_BUILD_SERVER=ON >/dev/null
+cmake --build "$SRC/build" --target llama-server -j >/dev/null
+cp "$SRC/build/bin/llama-server" "$OUT/"
 chmod +x "$OUT/llama-server"
+# LC_BUILD_VERSION block is cmd/cmdsize/platform/minos/sdk — minos is 3 lines in
+if ! otool -l "$OUT/llama-server" | grep -A4 LC_BUILD_VERSION | grep -q "minos ${MACOS_FLOOR:-14.0}"; then
+  echo "FATAL: llama-server deployment target is not ${MACOS_FLOOR:-14.0}" >&2
+  otool -l "$OUT/llama-server" | grep -A4 LC_BUILD_VERSION | head -6 >&2
+  exit 1
+fi
+if otool -L "$OUT/llama-server" | grep -qE '/opt/homebrew|/usr/local'; then
+  echo "FATAL: llama-server links non-system libraries:" >&2
+  otool -L "$OUT/llama-server" | grep -E '/opt/homebrew|/usr/local' >&2
+  exit 1
+fi
+echo "deployment floor ${MACOS_FLOOR:-14.0} + self-containment verified"
 
 echo "== [4/4] verify =="
 "$OUT/roo-engine" --phonemize "The quick brown fox."
