@@ -2,68 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/src/assets/app-icon.png" />
-    <title>Roo Voice</title>
-    <script type="module" src="/src/main.ts" defer></script>
+    <title>Roo Voice — TTS</title>
   </head>
-
   <body>
-    <div class="scrim"></div>
-    <main class="shell">
-      <header class="top">
-        <div class="brand"><span class="dot"></span> ABLITER8</div>
-        <h1>ROO VOICE</h1>
-        <div class="tagline">Custom single-voice model &middot; runs entirely on this machine</div>
-      </header>
-
-      <section class="stage">
-        <canvas id="viz"></canvas>
-        <div id="status" class="status starting">starting&hellip;</div>
-        <div id="download" class="download" hidden>
-          <div class="dl-label"></div>
-          <div class="dl-bar"><div class="dl-fill"></div></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <textarea id="text" rows="3" maxlength="4000"
-          placeholder="Type what Roo should say&hellip;"></textarea>
-        <div class="controls">
-          <button id="generate" class="speak" disabled>Generate</button>
-          <button id="save" class="speak alt" disabled>Save WAV</button>
-          <span id="meta" class="meta"></span>
-        </div>
-        <div id="error" class="error" hidden></div>
-      </section>
-
-      <section class="history">
-        <div class="h-head">
-          <h2>HISTORY</h2>
-          <span id="h-count" class="meta"></span>
-        </div>
-        <ul id="h-list"></ul>
-      </section>
-
-      <section class="compose" id="compose" hidden>
-        <div class="h-head">
-          <h2>COMPOSE</h2>
-          <span id="c-total" class="meta"></span>
-          <label class="meta c-xfade"><input type="checkbox" id="c-crossfade" /> crossfade</label>
-        </div>
-        <ul id="c-list"></ul>
-        <div class="controls">
-          <button id="c-preview" class="speak alt">Preview</button>
-          <button id="c-export" class="speak">Export WAV</button>
-          <button id="c-clear" class="speak alt">Clear</button>
-        </div>
-      </section>
-
-      <footer class="foot">
-        Generations stay on this device. Model: <b id="f-model">&mdash;</b>
-        &middot; engine <b id="f-engine">connecting</b>
-      </footer>
-    </main>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -83,12 +83,15 @@ class History:
         self.index = os.path.join(self.dir, "index.jsonl")
         self._lock = threading.Lock()
 
-    def add(self, text: str, wav: bytes, duration_s: float, gen_s: float) -> dict:
+    def add(self, text: str, wav: bytes, duration_s: float, gen_s: float,
+            title: str = "") -> dict:
         entry = {
             "id": f"{int(time.time() * 1000):x}",
             "text": text, "ts": time.time(),
             "duration_s": round(duration_s, 2), "gen_s": round(gen_s, 2),
         }
+        if title:
+            entry["title"] = title[:120]
         with self._lock:
             with open(os.path.join(self.dir, entry["id"] + ".wav"), "wb") as f:
                 f.write(wav)
@@ -177,14 +180,16 @@ def make_handler(app):
                 return self._json(503, {"error": f"engine {st['status']}", "state": st})
             try:
                 n = int(self.headers.get("Content-Length", 0))
-                text = json.loads(self.rfile.read(n).decode()).get("input", "").strip()
+                body = json.loads(self.rfile.read(n).decode())
+                text = body.get("input", "").strip()
                 if not text:
                     return self._json(400, {"error": "empty input"})
                 t0 = time.time()
                 wave = app["engine"].generate(text)
                 gen_s = time.time() - t0
                 wav = wav_bytes(wave)
-                entry = app["history"].add(text, wav, len(wave) / SAMPLE_RATE, gen_s)
+                entry = app["history"].add(text, wav, len(wave) / SAMPLE_RATE, gen_s,
+                                           title=str(body.get("title", "")).strip())
                 self._send(200, wav, "audio/wav", extra={
                     "X-History-Id": entry["id"],
                     "X-Duration-S": str(entry["duration_s"]),

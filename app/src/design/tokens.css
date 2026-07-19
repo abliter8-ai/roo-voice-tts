@@ -1,0 +1,202 @@
+/* ============================================================
+   Roo Voice — Design tokens
+   Imported 1:1 from the Claude Design project
+   "Roo Voice TTS Design System" (be6ff667). Fonts are self-hosted
+   (fontsource + bundled Bebas) instead of the Google CDN so the
+   app stays fully offline.
+   ============================================================ */
+
+@font-face {
+  font-family: 'Bebas Neue';
+  src: url('../assets/BebasNeue-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+
+/* ---- colors.css ---- */
+:root {
+  --roo-red: #FF093A;
+  --roo-red-hover: #FF2E56;
+  --roo-red-press: #D60630;
+  --roo-red-muted: #7A0A22;
+  --white: #FFFFFF;
+  --black: #000000;
+
+  --n-950: #000000;
+  --n-900: #09090B;
+  --n-850: #0F0F11;
+  --n-800: #16161A;
+  --n-750: #1D1D22;
+  --n-700: #27272B;
+  --n-600: #3A3A40;
+  --n-500: #52525B;
+  --n-400: #71717A;
+  --n-300: #A1A1AA;
+  --n-200: #D4D4D8;
+  --n-100: #E8E8EA;
+  --n-50:  #FAFAFA;
+
+  --line-subtle: rgba(255,255,255,0.06);
+  --line: rgba(255,255,255,0.10);
+  --line-strong: rgba(255,255,255,0.16);
+  --red-glow: rgba(255,9,58,0.35);
+  --red-veil: rgba(255,9,58,0.08);
+
+  --bg-canvas: var(--n-950);
+  --bg-base: var(--n-900);
+  --surface-card: var(--n-850);
+  --surface-input: var(--n-800);
+  --surface-hover: var(--n-800);
+  --surface-active: var(--n-750);
+
+  --text-primary: var(--n-50);
+  --text-secondary: var(--n-300);
+  --text-muted: var(--n-400);
+  --text-disabled: var(--n-500);
+  --text-on-red: var(--white);
+
+  --border-default: var(--line);
+  --border-subtle: var(--line-subtle);
+  --border-strong: var(--line-strong);
+  --border-input: var(--n-700);
+
+  --accent: var(--roo-red);
+  --accent-hover: var(--roo-red-hover);
+  --accent-press: var(--roo-red-press);
+  --accent-fg: var(--white);
+
+  --focus-ring: var(--roo-red);
+  --danger: var(--roo-red);
+
+  /* ---- typography.css ---- */
+  --font-display: 'Bebas Neue', 'Oswald', 'Arial Narrow', sans-serif;
+  --font-sans: 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
+
+  --display-2xl: 120px;
+  --display-xl: 88px;
+  --display-lg: 64px;
+  --display-md: 44px;
+  --display-sm: 32px;
+  --display-tracking: 0.02em;
+  --display-leading: 0.92;
+
+  --text-3xl: 30px;
+  --text-2xl: 24px;
+  --text-xl: 20px;
+  --text-lg: 18px;
+  --text-md: 15px;
+  --text-sm: 13px;
+  --text-xs: 11px;
+
+  --fw-light: 300;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --lh-tight: 1.1;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.65;
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-label: 0.08em;
+
+  /* ---- spacing.css ---- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  --control-sm: 32px;
+  --control-md: 38px;
+  --control-lg: 44px;
+  --control-xl: 52px;
+
+  --sidebar-w: 264px;
+  --content-max: 880px;
+  --gutter: 24px;
+
+  /* ---- radius.css ---- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.6);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.55);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,0.65);
+  --shadow-red: 0 0 0 1px rgba(255,9,58,0.4), 0 8px 32px rgba(255,9,58,0.25);
+  --glow-red-sm: 0 0 12px rgba(255,9,58,0.45);
+
+  --ring: 0 0 0 2px var(--n-950), 0 0 0 4px var(--roo-red);
+
+  --blur-panel: 16px;
+  --blur-overlay: 8px;
+
+  /* ---- motion.css ---- */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
+  --dur-slower: 480ms;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --transition-colors: color var(--dur-fast) var(--ease-standard),
+                       background-color var(--dur-fast) var(--ease-standard),
+                       border-color var(--dur-fast) var(--ease-standard),
+                       box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+/* ---- app chrome (from ui_kits/roo-voice-app/index.html) ---- */
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--n-950);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+}
+* { box-sizing: border-box; }
+#root { height: 100vh; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--n-700);
+  border-radius: 999px;
+  border: 2px solid var(--n-950);
+}
+a { color: var(--roo-red); }
+a:hover { color: var(--roo-red-hover); }
+
+/* Let Roo show through the panels — translucent surfaces + blur */
+#root textarea, #root input {
+  background: rgba(15,15,17,0.5) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@keyframes rooPulse {
+  0% { opacity: .9; transform: scale(1); }
+  70% { opacity: 0; transform: scale(1.25); }
+  100% { opacity: 0; transform: scale(1.25); }
+}
+/* CSS sonar (design's roo-wave-sonar.gif recreated as rings — asset-free) */
+@keyframes rooSonar {
+  0% { opacity: .55; transform: scale(0.45); }
+  100% { opacity: 0; transform: scale(1.05); }
+}
