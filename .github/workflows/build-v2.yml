@@ -12,6 +12,10 @@ on:
   push:
     branches: [v2-tauri-app]
     tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "screenshots/**"
   workflow_dispatch:
 
 jobs:
@@ -69,6 +73,26 @@ jobs:
             echo "$APPLE_API_KEY_CONTENT" > /tmp/asc-key.p8
             chmod 600 /tmp/asc-key.p8
           fi
+
+      - name: Presign frozen engine (macOS — notarization requires every nested Mach-O signed)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then echo "no cert secret — skipping presign"; exit 0; fi
+          KC="$RUNNER_TEMP/presign.keychain-db"
+          security create-keychain -p ci "$KC"
+          security unlock-keychain -p ci "$KC"
+          echo "$APPLE_CERTIFICATE" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" login.keychain-db
+          bash app/engine/freeze/presign-macos.sh app/engine/dist/roo-engine \
+            "$APPLE_SIGNING_IDENTITY" app/src-tauri/entitlements.plist
+          # signed engine must still RUN (Team-ID/library-validation interactions)
+          app/engine/dist/roo-engine/roo-engine --phonemize "Signed and still speaking."
 
       - name: Export updater signing key when configured
         shell: bash
