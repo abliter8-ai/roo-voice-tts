@@ -57,7 +57,25 @@ if otool -L "$OUT/libespeak-ng.dylib" | grep -q /opt/homebrew; then
   echo "FATAL: homebrew paths still referenced in vendored espeak" >&2; exit 1
 fi
 
-echo "== [3/4] llama-server ${LLAMA_TAG} — SOURCE build, static, floor macOS ${MACOS_FLOOR:-14.0} =="
+echo "== [3/4] llama-server ${LLAMA_TAG} — prebuilt if pinned, else source =="
+# Prebuilt path: our own verified static binary published as a build-deps
+# release asset (sha256-pinned). Cuts mac CI from ~45 min (source compile on
+# 3-core runners) to seconds; the source path below stays as the fallback and
+# the way to MAKE the next prebuilt when LLAMA_TAG bumps.
+PREBUILT_URL="${LLAMA_PREBUILT_URL:-https://github.com/abliter8-ai/roo-voice-tts/releases/download/build-deps-${LLAMA_TAG}/llama-server-macos-arm64-${LLAMA_TAG}-floor14}"
+PREBUILT_SHA="${LLAMA_PREBUILT_SHA:-c9afbac939e601bec2ec6142b071ea3625b68e5886ad16481bff23dc55934256}"
+if [ "${LLAMA_FORCE_SOURCE:-0}" != "1" ] && curl -sfL -o "$OUT/llama-server" "$PREBUILT_URL"; then
+  GOT_SHA="$(shasum -a 256 "$OUT/llama-server" | awk '{print $1}')"
+  if [ "$GOT_SHA" = "$PREBUILT_SHA" ]; then
+    chmod +x "$OUT/llama-server"
+    echo "prebuilt llama-server verified ($PREBUILT_SHA)"
+  else
+    echo "prebuilt sha mismatch ($GOT_SHA) — falling back to source" >&2
+    rm -f "$OUT/llama-server"
+  fi
+fi
+if [ ! -x "$OUT/llama-server" ]; then
+echo "   -- SOURCE build, static, floor macOS ${MACOS_FLOOR:-14.0} --"
 # CI shakedown finding (run 29686559249): the official macos-arm64 release
 # binaries carry deployment target macOS 26 and dyld-abort on anything older
 # (_OBJC_CLASS_$_MTLResidencySetDescriptor). Building from source with an
@@ -77,6 +95,7 @@ cmake -S "$SRC" -B "$SRC/build" -DCMAKE_BUILD_TYPE=Release \
 cmake --build "$SRC/build" --target llama-server -j >/dev/null
 cp "$SRC/build/bin/llama-server" "$OUT/"
 chmod +x "$OUT/llama-server"
+fi
 # LC_BUILD_VERSION block is cmd/cmdsize/platform/minos/sdk — minos is 3 lines in
 if ! otool -l "$OUT/llama-server" | grep -A4 LC_BUILD_VERSION | grep -q "minos ${MACOS_FLOOR:-14.0}"; then
   echo "FATAL: llama-server deployment target is not ${MACOS_FLOOR:-14.0}" >&2
