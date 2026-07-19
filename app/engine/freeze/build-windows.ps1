@@ -38,10 +38,18 @@ New-Item -ItemType Directory -Path $Tmp | Out-Null
 $Msi = Join-Path $Tmp "espeak-ng.msi"
 Invoke-WebRequest -Uri "https://github.com/espeak-ng/espeak-ng/releases/download/$EspeakVer/espeak-ng.msi" -OutFile $Msi
 Start-Process msiexec -ArgumentList "/a `"$Msi`" /qn TARGETDIR=`"$Tmp\x`"" -Wait
-$EspeakRoot = Get-ChildItem -Recurse -Path "$Tmp\x" -Filter "espeak-ng.dll" | Select-Object -First 1
-if (-not $EspeakRoot) { throw "espeak-ng.dll not found in MSI extract" }
-Copy-Item $EspeakRoot.FullName "$Out\espeak-ng.dll"
-$Data = Get-ChildItem -Recurse -Path "$Tmp\x" -Directory -Filter "espeak-ng-data" | Select-Object -First 1
+$EspeakDll = Get-ChildItem -Recurse -Path "$Tmp\x" -File |
+    Where-Object { $_.Name -in @("espeak-ng.dll", "libespeak-ng.dll") } |
+    Select-Object -First 1
+if (-not $EspeakDll) {
+    Write-Host "--- MSI extract tree (first 40 entries, for diagnosis) ---"
+    Get-ChildItem -Recurse -Path "$Tmp\x" | Select-Object -First 40 -ExpandProperty FullName
+    throw "espeak dll not found in MSI extract"
+}
+Copy-Item $EspeakDll.FullName "$Out\$($EspeakDll.Name)"
+$Data = Get-ChildItem -Recurse -Path "$Tmp\x" -Directory |
+    Where-Object { $_.Name -eq "espeak-ng-data" } | Select-Object -First 1
+if (-not $Data) { throw "espeak-ng-data not found in MSI extract" }
 Copy-Item -Recurse $Data.FullName "$Out\espeak-ng-data"
 
 Write-Host "== [4/4] official llama-server (win-vulkan-x64) =="
