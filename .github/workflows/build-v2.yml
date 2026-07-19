@@ -82,6 +82,9 @@ jobs:
             { echo "TAURI_SIGNING_PRIVATE_KEY<<__ROO_EOF__"
               echo "$KEY"
               echo "__ROO_EOF__"; } >> "$GITHUB_ENV"
+            # the key is passwordless (--ci); without this the CLI prompts on a
+            # non-tty and dies with "Device not configured"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
           fi
 
       - name: Build app (and release on tag)

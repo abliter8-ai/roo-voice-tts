@@ -1,0 +1,11 @@
+{
+  "_comment": "Model manifest for roo-engine. At release, fill the HF resolve URLs + sha256 of the IP-177 WINNING checkpoint's artifacts, copy to engine/dist/roo-engine/manifest.json BEFORE the tauri bundle step, and the shell passes it via --manifest. A user's data-dir models/manifest.json overrides this (model pinning).",
+  "gguf": {
+    "url": "https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS-GGUF/resolve/main/roo-neutts-q4_k_m.gguf",
+    "sha256": "FILL_AT_RELEASE"
+  },
+  "onnx": {
+    "url": "https://huggingface.co/neuphonic/neucodec-onnx-decoder-int8/resolve/main/model.onnx",
+    "sha256": "FILL_AT_RELEASE"
+  }
+}
