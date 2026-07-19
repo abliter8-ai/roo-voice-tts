@@ -20,7 +20,22 @@ LLAMA_TAG="${LLAMA_TAG:-b10068}"
 OUT="$ENGINE_DIR/dist/roo-engine"
 
 if [ ! -x "$VENV/bin/pyinstaller" ]; then   # CI runners start bare
-  python3 -m venv "$VENV"
+  # Freeze from python-build-standalone, NOT a framework python: framework
+  # builds make PyInstaller emit Python.framework + symlinks, the Tauri
+  # resource copy dereferences the symlinks, and Apple notarization then
+  # rejects the broken framework layout ("signature of the binary is
+  # invalid", CI run 29689893901). pbs ships plain libpython — no framework,
+  # no symlinks, nothing to break.
+  PBS_VER="3.12.13"
+  PBS_TAG="20260718"
+  PBS_DIR="${ROO_PBS_DIR:-$HOME/roo-voice/pbs-python}"
+  if [ ! -x "$PBS_DIR/python/bin/python3.12" ]; then
+    mkdir -p "$PBS_DIR"
+    curl -sfL -o "$PBS_DIR/pbs.tgz" \
+      "https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PBS_VER}+${PBS_TAG}-aarch64-apple-darwin-install_only.tar.gz"
+    tar -xzf "$PBS_DIR/pbs.tgz" -C "$PBS_DIR"
+  fi
+  "$PBS_DIR/python/bin/python3.12" -m venv "$VENV"
   "$VENV/bin/pip" install --quiet phonemizer onnxruntime numpy pyinstaller
 fi
 
