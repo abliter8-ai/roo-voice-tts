@@ -1,0 +1,104 @@
+# IP-178 — Roo Voice v2 CI: freeze roo-engine per-OS, build/bundle the Tauri
+# app, and (on tag) publish a draft release with updater artifacts + latest.json.
+#
+# Secrets (macOS signing/notarization + updater; workflow degrades gracefully
+# without them — unsigned builds for smoke only):
+#   TAURI_SIGNING_PRIVATE_KEY / _PASSWORD     updater artifact signing
+#   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY
+#   APPLE_API_ISSUER / APPLE_API_KEY / APPLE_API_KEY_CONTENT   notarization (ASC API key)
+name: build-v2
+
+on:
+  push:
+    branches: [v2-tauri-app]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14            # arm64 / Metal
+            freeze: bash app/engine/freeze/build-macos.sh
+          - platform: windows-latest      # x64 / Vulkan
+            freeze: powershell -ExecutionPolicy Bypass -File app/engine/freeze/build-windows.ps1
+          - platform: ubuntu-22.04        # x64 / Vulkan
+            freeze: bash app/engine/freeze/build-linux.sh
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux system deps (webkit + espeak)
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf espeak-ng-data libespeak-ng1 libpcaudio0
+
+      - name: macOS espeak (freeze source only — vendored into the bundle)
+        if: startsWith(matrix.platform, 'macos')
+        run: brew install espeak-ng
+
+      - name: Freeze roo-engine
+        env:
+          ROO_FREEZE_ENV: ${{ github.workspace }}/.freeze-venv
+        run: ${{ matrix.freeze }}
+
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+
+      - name: Write ASC API key for notarization (no-op without secret)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          if [ -n "$APPLE_API_KEY_CONTENT" ]; then
+            echo "$APPLE_API_KEY_CONTENT" > /tmp/asc-key.p8
+            chmod 600 /tmp/asc-key.p8
+          fi
+
+      - name: Build app (and release on tag)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: /tmp/asc-key.p8
+        with:
+          projectPath: app
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Roo Voice {0}', github.ref_name) || '' }}
+          releaseDraft: true
+          includeUpdaterJson: true
+
+      - name: Upload bundles (non-tag builds)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: roo-voice-${{ matrix.platform }}
+          path: |
+            app/src-tauri/target/release/bundle/**/*.dmg
+            app/src-tauri/target/release/bundle/**/*.app.tar.gz
+            app/src-tauri/target/release/bundle/**/*.exe
+            app/src-tauri/target/release/bundle/**/*.msi
+            app/src-tauri/target/release/bundle/**/*.AppImage
+            app/src-tauri/target/release/bundle/**/*.deb
+          if-no-files-found: warn

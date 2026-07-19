@@ -104,6 +104,14 @@ h1 {
 .status.failed { color: var(--red); border-color: #47101d; }
 .status.speaking, .status.generating { color: var(--red); border-color: #47101d; }
 
+.update-pill {
+  cursor: pointer;
+  color: var(--red);
+  border-color: #47101d;
+  margin-top: 6px;
+}
+.update-pill:hover { border-color: var(--red); }
+
 .download { width: min(400px, 74vw); }
 .dl-label {
   font-family: var(--mono);

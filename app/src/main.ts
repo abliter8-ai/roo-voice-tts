@@ -336,9 +336,30 @@ els.text.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") generate();
 });
 
+// ---------- self-update (Tauri only; no-op in browser dev) ----------
+async function checkUpdate() {
+  const tauri = (window as any).__TAURI__;
+  if (!tauri?.updater) return;
+  try {
+    const update = await tauri.updater.check();
+    if (!update) return;
+    const pill = document.createElement("button");
+    pill.className = "status update-pill";
+    pill.textContent = `update ${update.version} — install & restart`;
+    pill.onclick = async () => {
+      pill.textContent = "downloading…";
+      pill.disabled = true;
+      await update.downloadAndInstall();
+      await tauri.process.relaunch();
+    };
+    els.status.after(pill);
+  } catch { /* offline or endpoint missing — silent */ }
+}
+
 (async () => {
   enginePort = await discoverPort();
   base = `http://127.0.0.1:${enginePort}`;
   pollHealth();
   loadHistory();
+  checkUpdate();
 })();

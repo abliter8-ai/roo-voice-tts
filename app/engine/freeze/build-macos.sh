@@ -19,6 +19,11 @@ VENV="${ROO_FREEZE_ENV:-$HOME/roo-voice/engine-freeze/env}"
 LLAMA_TAG="${LLAMA_TAG:-b10068}"
 OUT="$ENGINE_DIR/dist/roo-engine"
 
+if [ ! -x "$VENV/bin/pyinstaller" ]; then   # CI runners start bare
+  python3 -m venv "$VENV"
+  "$VENV/bin/pip" install --quiet phonemizer onnxruntime numpy pyinstaller
+fi
+
 echo "== [1/4] PyInstaller freeze =="
 cd "$ENGINE_DIR"
 "$VENV/bin/pyinstaller" --noconfirm --clean --onedir --name roo-engine \
