@@ -54,6 +54,8 @@ class Phonemizer:
     """en-gb espeak backend with the EXACT training settings — parity is a ship
     gate (IP-178 §6), so these kwargs must never drift from finetune_roo.py."""
 
+    _preloaded: list = []   # keep bundled dylib handles alive for the process
+
     @staticmethod
     def _locate_espeak():
         """ctypes.util.find_library misses Homebrew and frozen-bundle paths, so
@@ -73,6 +75,17 @@ class Phonemizer:
             for name in names:
                 lib = os.path.join(root, name)
                 if os.path.exists(lib):
+                    # Preload bundled deps (pcaudio) by absolute path so the
+                    # TEMP COPY phonemizer makes of the espeak lib can resolve
+                    # its bare-name dependency from the already-loaded image.
+                    import ctypes
+                    import glob as _glob
+                    for dep in _glob.glob(os.path.join(root, "libpcaudio*")):
+                        try:
+                            Phonemizer._preloaded.append(
+                                ctypes.CDLL(dep, mode=ctypes.RTLD_GLOBAL))
+                        except OSError:
+                            pass
                     from phonemizer.backend.espeak.wrapper import EspeakWrapper
                     EspeakWrapper.set_library(lib)
                     data = os.path.join(root, "espeak-ng-data")

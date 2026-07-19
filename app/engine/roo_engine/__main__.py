@@ -65,12 +65,21 @@ def find_llama_bin(explicit):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-dir", required=True)
+    ap.add_argument("--data-dir")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--llama-bin")
     ap.add_argument("--gguf")
     ap.add_argument("--onnx")
+    ap.add_argument("--phonemize", metavar="TEXT",
+                    help="print en-gb phonemes for TEXT and exit "
+                         "(the IP-178 phoneme-parity gate probes this)")
     args = ap.parse_args()
+
+    if args.phonemize is not None:
+        print(Phonemizer()(args.phonemize))
+        return
+    if not args.data_dir:
+        ap.error("--data-dir is required")
     os.makedirs(args.data_dir, exist_ok=True)
 
     port = args.port or pick_port(preferred=(8321, 8765, 8808))
