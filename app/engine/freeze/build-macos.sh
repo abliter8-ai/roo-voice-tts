@@ -33,8 +33,12 @@ EBREW="$(brew --prefix espeak-ng)"
 PBREW="$(brew --prefix pcaudiolib)"
 cp "$EBREW/lib/libespeak-ng.1.dylib" "$OUT/libespeak-ng.dylib"
 cp "$PBREW/lib/libpcaudio.0.dylib"   "$OUT/libpcaudio.0.dylib"
+chmod u+w "$OUT/libespeak-ng.dylib" "$OUT/libpcaudio.0.dylib"
 rm -rf "$OUT/espeak-ng-data"
 cp -R "$EBREW/share/espeak-ng-data" "$OUT/espeak-ng-data"
+# Cellar files are mode 444; user-writable copies or the NEXT bundler run
+# cannot overwrite its previous output (os error 13).
+chmod -R u+w "$OUT/espeak-ng-data"
 # Bare-name dep + engine-side preload: phonemizer loads a TEMP COPY of the
 # espeak dylib, so @loader_path would resolve to the temp dir and fail. With a
 # bare install name, dyld satisfies the copy's dependency from the pcaudio image

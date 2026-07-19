@@ -40,20 +40,26 @@ fn engine_command(app: &tauri::AppHandle) -> Result<Command, String> {
         return Ok(c);
     }
 
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .ok_or("cannot locate app binary dir")?;
     let name = if cfg!(windows) { "roo-engine.exe" } else { "roo-engine" };
-    let engine = exe_dir.join(name);
-    if !engine.exists() {
-        return Err(format!("engine binary missing: {}", engine.display()));
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(res) = app.path().resource_dir() {
+        candidates.push(res.join("roo-engine").join(name));
     }
+    if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+        candidates.push(exe_dir.join("roo-engine").join(name));
+        candidates.push(exe_dir.join(name));
+    }
+    let engine = candidates
+        .iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| format!("engine binary missing; looked in: {candidates:?}"))?;
     let mut c = Command::new(engine);
-    c.arg("--data-dir")
-        .arg(&data_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+    c.arg("--data-dir").arg(&data_dir);
+    let manifest = engine.parent().unwrap().join("manifest.json");
+    if manifest.exists() {
+        c.arg("--manifest").arg(manifest);
+    }
+    c.stdout(Stdio::piped()).stderr(Stdio::null());
     Ok(c)
 }
 

@@ -23,7 +23,8 @@ from .server import History, diagnostics_factory, download, serve, set_state
 
 def resolve_models(args):
     """Explicit paths win; otherwise look in data-dir/models; otherwise download
-    per data-dir/models/manifest.json ({gguf: {url, sha256}, onnx: {url, sha256}})."""
+    per manifest ({gguf: {url, sha256}, onnx: {url, sha256}}) — the data-dir copy
+    wins over the app-bundled one (--manifest) so users can pin models."""
     mdir = os.path.join(args.data_dir, "models")
     os.makedirs(mdir, exist_ok=True)
     paths = {"gguf": args.gguf, "onnx": args.onnx}
@@ -31,6 +32,8 @@ def resolve_models(args):
                 "onnx": os.path.join(mdir, "neucodec-decoder.onnx")}
     manifest = {}
     mpath = os.path.join(mdir, "manifest.json")
+    if not os.path.exists(mpath) and args.manifest and os.path.exists(args.manifest):
+        mpath = args.manifest
     if os.path.exists(mpath):
         with open(mpath) as f:
             manifest = json.load(f)
@@ -70,6 +73,7 @@ def main():
     ap.add_argument("--llama-bin")
     ap.add_argument("--gguf")
     ap.add_argument("--onnx")
+    ap.add_argument("--manifest", help="bundled model-manifest fallback (see resolve_models)")
     ap.add_argument("--phonemize", metavar="TEXT",
                     help="print en-gb phonemes for TEXT and exit "
                          "(the IP-178 phoneme-parity gate probes this)")
@@ -107,6 +111,7 @@ def main():
             decoder = OnnxDecoder(paths["onnx"])
             llama = LlamaServer(find_llama_bin(args.llama_bin), paths["gguf"],
                                 os.path.join(args.data_dir, "llama-server.log"))
+            llama_ref["llama"] = llama   # visible to shutdown BEFORE start
             llama.start()
             app["diagnostics"] = diagnostics_factory(args.data_dir, llama)
             engine = Engine(llama, decoder, phonemizer)

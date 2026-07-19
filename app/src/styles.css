@@ -260,6 +260,51 @@ button.speak.alt {
   padding: 14px 4px;
 }
 
+/* ---- compose ---- */
+.compose { width: 100%; max-width: 640px; }
+.c-xfade { margin-left: auto; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.c-xfade input { accent-color: var(--red); }
+#c-list { list-style: none; margin: 0 0 4px; padding: 0; }
+#c-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
+  border-bottom: 1px solid #101114;
+}
+#c-list .c-idx {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--red);
+  width: 18px;
+  flex-shrink: 0;
+}
+#c-list .h-text { flex: 1; font-size: 13px; color: #d4d7db;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#c-list button {
+  background: transparent;
+  border: 1px solid #2b2c30;
+  color: #d4d7db;
+  border-radius: 7px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#c-list button:hover { border-color: var(--red); color: var(--red); }
+#c-list .c-gap {
+  width: 62px;
+  background: #0c0c0e;
+  color: #d4d7db;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.compose .controls { margin-top: 8px; }
+.compose button.speak { font-size: 16px; padding: 9px 20px; }
+
 .foot {
   color: #6a6e74;
   font-size: 11px;

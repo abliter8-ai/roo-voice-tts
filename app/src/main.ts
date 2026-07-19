@@ -5,6 +5,7 @@
  * `?engine=PORT` or 8321. Everything else talks HTTP to the engine.
  */
 import { Visualizer } from "./visualizer";
+import { Composer } from "./compose";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 
@@ -213,6 +214,15 @@ async function loadHistory() {
         els.save.disabled = false;
         playWav(wav, () => li.classList.remove("playing"));
       };
+      const add = document.createElement("button");
+      add.textContent = "+";
+      add.title = "Add to Compose";
+      add.onclick = async () => {
+        audioCtx ??= new AudioContext();
+        const wav = await (await fetch(`${base}/history/${it.id}.wav`)).blob();
+        const buf = await audioCtx.decodeAudioData(await wav.arrayBuffer());
+        composer.add(it.id, it.text, buf);
+      };
       const del = document.createElement("button");
       del.textContent = "✕";
       del.title = "Delete";
@@ -220,11 +230,100 @@ async function loadHistory() {
         await fetch(`${base}/history/${it.id}`, { method: "DELETE" });
         loadHistory();
       };
-      li.append(play, del);
+      li.append(play, add, del);
       els.hList.append(li);
     }
   } catch { /* engine not up yet */ }
 }
+
+// ---------- compose ----------
+const composer = new Composer();
+const cEls = {
+  section: $("#compose"),
+  list: $("#c-list"),
+  total: $("#c-total"),
+  crossfade: $<HTMLInputElement>("#c-crossfade"),
+  preview: $<HTMLButtonElement>("#c-preview"),
+  exportBtn: $<HTMLButtonElement>("#c-export"),
+  clear: $<HTMLButtonElement>("#c-clear"),
+};
+
+function renderCompose() {
+  cEls.section.hidden = composer.items.length === 0;
+  cEls.total.textContent = `${composer.items.length} clips · ${composer.totalSeconds().toFixed(1)}s`;
+  cEls.list.innerHTML = "";
+  composer.items.forEach((it, idx) => {
+    const li = document.createElement("li");
+    const mk = (label: string, title: string, fn: () => void) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.title = title;
+      b.onclick = fn;
+      return b;
+    };
+    const num = document.createElement("span");
+    num.className = "c-idx";
+    num.textContent = String(idx + 1);
+    const txt = document.createElement("span");
+    txt.className = "h-text";
+    txt.textContent = it.text;
+    const gap = document.createElement("input");
+    gap.className = "c-gap";
+    gap.type = "number";
+    gap.min = "0";
+    gap.max = "5000";
+    gap.step = "50";
+    gap.value = String(it.gapMs);
+    gap.title = "gap after clip (ms)";
+    gap.onchange = () => {
+      it.gapMs = Math.max(0, parseInt(gap.value || "0", 10));
+      cEls.total.textContent = `${composer.items.length} clips · ${composer.totalSeconds().toFixed(1)}s`;
+    };
+    li.append(num, txt, gap,
+      mk("↑", "Move up", () => composer.move(idx, -1)),
+      mk("↓", "Move down", () => composer.move(idx, 1)),
+      mk("✕", "Remove", () => composer.remove(idx)));
+    cEls.list.append(li);
+  });
+}
+composer.onChange = renderCompose;
+
+cEls.crossfade.onchange = () => {
+  composer.crossfade = cEls.crossfade.checked;
+  renderCompose();
+};
+cEls.preview.onclick = async () => {
+  if (!composer.items.length) return;
+  audioCtx ??= new AudioContext();
+  if (audioCtx.state === "suspended") await audioCtx.resume();
+  currentSource?.stop();
+  currentSource = null;
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 1024;
+  analyser.connect(audioCtx.destination);
+  viz.attachAnalyser(analyser);
+  viz.setState("speaking");
+  setStatus("speaking", "playing composition");
+  const len = composer.schedule(audioCtx, analyser, audioCtx.currentTime + 0.05);
+  window.setTimeout(() => {
+    viz.setState("idle");
+    viz.attachAnalyser(null);
+    setStatus(ready ? "ready" : "starting", ready ? "ready" : "starting…");
+  }, (len + 0.2) * 1000);
+};
+cEls.exportBtn.onclick = async () => {
+  if (!composer.items.length) return;
+  const blob = await composer.renderWav();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `roo-voice-compose-${Date.now()}.wav`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+cEls.clear.onclick = () => {
+  composer.items = [];
+  renderCompose();
+};
 
 function esc(s: string) {
   return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
