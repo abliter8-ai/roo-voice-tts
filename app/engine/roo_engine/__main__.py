@@ -116,7 +116,13 @@ def main():
             app["diagnostics"] = diagnostics_factory(args.data_dir, llama)
             engine = Engine(llama, decoder, phonemizer)
             set_state(status="warming")
-            engine.generate("Hi.")             # pay backend compile before ready
+            # Pay ALL backend compile before ready. A short warm-up only builds
+            # decode-shaped pipelines; batched-prefill pipelines compile on the
+            # first real-sized prompt (ultra/Vulkan: 13 tok/s cold vs 18k warm —
+            # a 13 s stall on the user's first request). Warm with a full
+            # sentence so prefill compiles here, behind the progress UI.
+            engine.generate("This is the voice engine warming up its compute "
+                            "pipelines so your first request starts instantly.")
             app["engine"] = engine
             set_state(status="ready", detail="")
         except BaseException as e:

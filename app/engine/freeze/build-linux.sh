@@ -49,6 +49,8 @@ cp "$LBIN" "$OUT/"
 find "$LDIR" -maxdepth 1 -name '*.so*' -exec cp {} "$OUT/" \;
 chmod +x "$OUT/llama-server"
 
+[ -f "$HERE/manifest.json" ] && cp "$HERE/manifest.json" "$OUT/manifest.json"
+
 "$OUT/roo-engine" --phonemize "The quick brown fox."
 "$OUT/llama-server" --version 2>&1 | head -2 || true
 du -sh "$OUT"

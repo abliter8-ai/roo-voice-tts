@@ -90,6 +90,8 @@ if otool -L "$OUT/llama-server" | grep -qE '/opt/homebrew|/usr/local'; then
 fi
 echo "deployment floor ${MACOS_FLOOR:-14.0} + self-containment verified"
 
+[ -f "$HERE/manifest.json" ] && cp "$HERE/manifest.json" "$OUT/manifest.json"
+
 echo "== [4/4] verify =="
 "$OUT/roo-engine" --phonemize "The quick brown fox."
 "$OUT/llama-server" --version 2>&1 | head -2

@@ -60,5 +60,7 @@ $Srv = Get-ChildItem -Recurse -Path "$Tmp\llama" -Filter "llama-server.exe" | Se
 Copy-Item "$($Srv.DirectoryName)\*.exe" $Out
 Copy-Item "$($Srv.DirectoryName)\*.dll" $Out
 
+if (Test-Path "$Here\manifest.json") { Copy-Item "$Here\manifest.json" "$Out\manifest.json" }
+
 & "$Out\roo-engine.exe" --phonemize "The quick brown fox."
 Write-Host "OK: $Out"

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Roo Voice hardened-runtime entitlements (IP-176 §9).
+
+    Notarization REQUIRES the hardened runtime. But this app creates a private
+    virtualenv at runtime and pip-installs native extensions (.so) into
+    ~/Library/Application Support/Roo Voice/env — i.e. UNSIGNED code, OUTSIDE the
+    signed bundle. Library validation blocks exactly that, so the bundled Python
+    would launch fine and then fail on `import mlx`.
+
+    disable-library-validation is therefore load-bearing here, not boilerplate.
+  -->
+
+  <!-- Load pip-installed native extensions from the user-data venv. REQUIRED. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- MLX/Metal compiles kernels at runtime; CPython also JITs in places. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <!-- Metal shader compilation maps executable pages that we do not sign. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- The venv is driven via PYTHONPATH/PYTHONHOME-style env vars. -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+
+  <!-- Downloads the model from Hugging Face on first run; serves on localhost. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+</dict>
+</plist>

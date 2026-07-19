@@ -1,0 +1,10 @@
+{
+  "gguf": {
+    "url": "https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS-GGUF/resolve/main/roo-neutts-q4_k_m.gguf",
+    "sha256": "67bb81a982b4ae082722d4245449e24a0b074de0a7238e9d2863a5b114a49144"
+  },
+  "onnx": {
+    "url": "https://huggingface.co/neuphonic/neucodec-onnx-decoder-int8/resolve/main/model.onnx",
+    "sha256": "3ddd9e56396e6029e0e948ac0255c89c803f981f23dcf4c154f50820bd74a6b3"
+  }
+}
