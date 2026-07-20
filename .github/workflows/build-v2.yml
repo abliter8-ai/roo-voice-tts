@@ -18,6 +18,13 @@ on:
       - "screenshots/**"
   workflow_dispatch:
 
+# tauri-action CREATES a GitHub Release on tag builds — needs contents:write
+# (default GITHUB_TOKEN is read-only, hence "Resource not accessible by
+# integration" on the v2.0.0 tag build 29723975782; push/artifact builds don't
+# need it).
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:

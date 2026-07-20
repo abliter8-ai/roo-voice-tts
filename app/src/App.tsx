@@ -3,12 +3,12 @@
  * titlebar badge, real download progress strip, real history feeding the
  * screens. */
 import React from "react";
-import { SidebarNav, Badge } from "./design/components";
+import { SidebarNav, Badge, Button } from "./design/components";
 import { Wave, Ear, Layers, Settings, Lock } from "./design/icons";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { ListenScreen } from "./screens/ListenScreen";
 import { StudioScreen, composerCount } from "./screens/StudioScreen";
-import { connect, fetchHealth, listHistory, HealthState, HistEntry } from "./engine";
+import { connect, fetchHealth, listHistory, saveDiagnostics, APP_VERSION, HealthState, HistEntry } from "./engine";
 import appIcon from "./assets/app-icon.png";
 import headshot from "./assets/roo-headshot.png";
 
@@ -19,6 +19,7 @@ export default function App() {
   const [health, setHealth] = React.useState<HealthState>({ status: "connecting", detail: "" });
   const [clips, setClips] = React.useState<HistEntry[]>([]);
   const [currentId, setCurrentId] = React.useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
@@ -73,14 +74,16 @@ export default function App() {
         <span style={{ color: "var(--roo-red)", display: "inline-flex" }}><Lock size={14} /></span>
         <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--text-secondary)" }}>On device · Private</span>
       </div>
-      <button style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 12px", background: "transparent", border: "none", borderRadius: "var(--radius-md)", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500 }}>
+      <button onClick={() => setSettingsOpen(true)}
+        style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 12px", background: settingsOpen ? "var(--surface-hover)" : "transparent", border: "none", borderRadius: "var(--radius-md)", color: settingsOpen ? "var(--text-primary)" : "var(--text-secondary)", cursor: "pointer", fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500 }}>
         <span style={{ display: "inline-flex" }}><Settings size={17} /></span> Settings
       </button>
     </div>
   );
 
   return (
-    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+      {settingsOpen && <SettingsPanel health={health} onClose={() => setSettingsOpen(false)} />}
       <SidebarNav items={nav} value={mode} onChange={(v) => setMode(v as Mode)} header={brand} footer={footer} />
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--n-950)", position: "relative" }}>
         {/* Roo watches — faint headshot underlay */}
@@ -113,6 +116,55 @@ export default function App() {
           {mode === "gen" && <GenerateScreen health={health} onGenerated={onGenerated} />}
           {mode === "listen" && <ListenScreen clip={current} />}
           {mode === "studio" && <StudioScreen clips={clips} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPanel({ health, onClose }: { health: HealthState; onClose: () => void }) {
+  const [saved, setSaved] = React.useState(false);
+  const row = (label: string, value: React.ReactNode) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+      <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--text-muted)" }}>{label}</span>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-secondary)", textAlign: "right", wordBreak: "break-word" }}>{value}</span>
+    </div>
+  );
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 40, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)", display: "flex", justifyContent: "flex-end" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: "min(420px, 90vw)", height: "100%", background: "var(--n-900)", borderLeft: "1px solid var(--border-default)",
+        boxShadow: "var(--shadow-lg)", padding: "22px 24px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 4,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontFamily: "var(--font-display)", fontSize: 26, letterSpacing: ".03em", color: "var(--white)", textTransform: "uppercase" }}>Settings</span>
+          <button onClick={onClose} aria-label="Close" style={{ marginLeft: "auto", background: "transparent", border: "1px solid var(--border-default)", borderRadius: "var(--radius-sm)", color: "var(--text-secondary)", width: 28, height: 28, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-muted)", margin: "12px 0 2px" }}>Engine</div>
+        {row("Status", <Badge variant={health.status === "ready" ? "neutral" : "outline"} dot={health.status === "ready"}>{health.status}</Badge>)}
+        {row("App version", APP_VERSION)}
+        {row("Engine version", health.version || "—")}
+        {row("Model", health.model?.replace(/\.gguf$/, "") || "—")}
+        {row("Decoding", "Greedy · deterministic (temp 0)")}
+        {row("Output", "24 kHz mono WAV")}
+
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-muted)", margin: "18px 0 2px" }}>Privacy</div>
+        <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55, margin: "6px 0" }}>
+          Everything runs on this device. Your text and audio never leave the machine — the only network use is the one-time model download and update checks.
+        </p>
+
+        <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-muted)", margin: "18px 0 8px" }}>Support</div>
+        <Button variant="secondary" fullWidth onClick={async () => { await saveDiagnostics(); setSaved(true); setTimeout(() => setSaved(false), 2500); }}>
+          {saved ? "Report saved ✓" : "Save diagnostics report"}
+        </Button>
+        <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, margin: "8px 0 0" }}>
+          A redacted JSON bundle (hardware, versions, timings, last error) to attach to a bug report.
+        </p>
+
+        <div style={{ marginTop: "auto", paddingTop: 20, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-disabled)", display: "flex", flexDirection: "column", gap: 6 }}>
+          <a href="https://github.com/abliter8-ai/roo-voice-tts" target="_blank" rel="noreferrer">github.com/abliter8-ai/roo-voice-tts</a>
+          <a href="https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS" target="_blank" rel="noreferrer">Voice model card</a>
         </div>
       </div>
     </div>

@@ -78,6 +78,18 @@ export async function fetchProgress(): Promise<{ phase: string; chunk: number; c
   return await r.json();
 }
 
+export const APP_VERSION = "2.0.0";
+
+export async function fetchDiagnostics(): Promise<any> {
+  return await (await fetch(`${base}/diagnostics`)).json();
+}
+
+export async function saveDiagnostics(): Promise<void> {
+  const d = await fetchDiagnostics();
+  const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
+  saveBlobAs(blob, `roo-voice-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`);
+}
+
 export async function listHistory(): Promise<HistEntry[]> {
   const r = await fetch(`${base}/history`);
   return (await r.json()) as HistEntry[];

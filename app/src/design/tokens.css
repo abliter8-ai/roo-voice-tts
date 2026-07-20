@@ -173,7 +173,9 @@ html, body {
   color: var(--text-primary);
 }
 * { box-sizing: border-box; }
-#root { height: 100vh; }
+/* height chain uses 100% (html/body are 100%) not 100vh — WKWebView doesn't
+   always re-evaluate vh on window resize, which read as "panels don't resize". */
+#root { height: 100%; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb {
   background: var(--n-700);
