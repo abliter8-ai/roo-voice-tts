@@ -135,6 +135,31 @@ jobs:
           releaseDraft: true
           includeUpdaterJson: true
 
+      - name: Notarize & staple the DMG (macOS tag builds)
+        # tauri-action notarizes+staples the .app but NOT the DMG wrapper, so a
+        # downloaded quarantined DMG can be Gatekeeper-blocked at mount on recent
+        # macOS. Submit the DMG itself, staple it, and re-upload it to the draft
+        # release in place of the un-stapled one. (Was a manual step for v2.0.0.)
+        if: startsWith(matrix.platform, 'macos') && startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          if [ ! -f /tmp/asc-key.p8 ] || [ -z "$APPLE_API_ISSUER" ]; then
+            echo "no ASC key/issuer — skipping DMG notarization"; exit 0
+          fi
+          DMG="$(find app/src-tauri/target/release/bundle/dmg -name '*.dmg' | head -1)"
+          if [ -z "$DMG" ]; then echo "no DMG produced — skipping"; exit 0; fi
+          echo "notarizing $DMG"
+          xcrun notarytool submit "$DMG" --key /tmp/asc-key.p8 \
+            --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          # replace the un-stapled DMG asset already uploaded by tauri-action
+          gh release upload "${{ github.ref_name }}" "$DMG" --clobber \
+            --repo "${{ github.repository }}"
+
       - name: Upload bundles (non-tag builds)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
