@@ -47,10 +47,13 @@ export function GenerateScreen({ health, onGenerated }: {
 
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "40px 40px 64px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <h1 style={{ fontFamily: "var(--font-display)", fontSize: 52, letterSpacing: ".02em", color: "var(--white)", margin: 0, lineHeight: 0.95, textTransform: "uppercase", fontWeight: 400 }}>
           Tell me what to say
         </h1>
+      </div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 30, letterSpacing: ".03em", color: "var(--roo-red)", lineHeight: 0.95, textTransform: "uppercase", fontWeight: 400, margin: "6px 0 10px" }}>
+        …and I'll tell you what to do
       </div>
       <p style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--text-muted)", margin: "0 0 28px", maxWidth: 520, lineHeight: 1.55 }}>
         Jot it down and I'll speak it. Everything is computed right here on your machine — nothing leaves your device.
