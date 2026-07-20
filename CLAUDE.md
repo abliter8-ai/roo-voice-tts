@@ -1,49 +1,37 @@
-# CLAUDE.md — Claude Code setup guide
+# CLAUDE.md — Claude Code guide
 
-You're helping a user run **Roo Voice** (a local single-voice TTS app) on their machine. Get it running
-with the least friction and don't change the baked-in voice config.
+**Roo Voice** is a local, single-voice TTS **desktop app**. As of **v2.0.0** it's a native app
+(Tauri), not a clone-and-run script. Full detail — architecture, build, troubleshooting, the locked
+voice contract — is in [`AGENTS.md`](AGENTS.md); read it. The essentials:
 
-**Do this first:** run the one-command launcher, which auto-detects the user's hardware, installs deps
-into a `.venv`, downloads the right model, **warms it up**, and opens the web UI at `http://localhost:8080/`:
+## Helping a user
+There's no build step for users — point them at a signed installer:
+- Releases (Latest = v2.0.0): <https://github.com/abliter8-ai/roo-voice-tts/releases/latest>
+- Mirror: `https://appinstall.ruinpilot.plus/roo-voice-{macos,winx64,linux}-v2_0_0.{dmg,exe,AppImage}`
 
-```bash
-./start.sh            # macOS / Linux
-start.bat             # Windows (NVIDIA GPU)
-```
+First launch downloads the voice model (~740 MB, resumable, checksum-verified). No GPU required — a
+modern AVX2 CPU runs it at ~real-time. macOS 14+ arm64 / Windows 10-11 x64 / Linux x64. Not
+supported: Intel Macs, native Windows-ARM64 (emulated x64 = silence), pre-AVX2 CPUs.
 
-- **Apple Silicon Mac** → MLX **4-bit** (`…_mlx4`, default, ~2.3 GB). 8-bit (`…_mlx8`) is opt-in headroom.
-- **NVIDIA GPU** → transformers **INT4 NF4** (`…_int4`, default, ~3.5 GB). INT8 / BF16 are opt-in.
-- No Intel-Mac / AMD / CPU-practical path. **CPU is refused, not fallen back to.**
+## Working on the code
+- `app/` = Tauri project: `app/src/` (React UI), `app/src-tauri/` (Rust shell that supervises the
+  sidecar), `app/engine/roo_engine/` (frozen Python sidecar: phonemize en-GB → llama.cpp GGUF greedy
+  → NeuCodec ONNX decode), `app/engine/freeze/` (per-OS freeze + `manifest.json` model pin).
+- Build: `app/engine/freeze/build-<os>.sh` then `cd app && npm ci && npm run tauri build`.
+  CI: `.github/workflows/build-v2.yml` (tag push → signed/notarized draft release, all 3 OSes).
 
-**Voice usage:** short inputs (a sentence or two, ~15 s); punctuation drives pauses; no SSML. Longer
-audio = the UI's **Compose** button (browser-side, no extra tools) or `tools/compose.py` (needs ffmpeg).
+## If a user says it's broken
+Get the report first, don't theorise: **Settings → Save diagnostics report** (or
+`GET /diagnostics`, or the engine log under `~/Library/Application Support/ai.abliter8.roo-voice/`).
+Status pill: `downloading → loading → warming → ready`. Mid-clip garble = the chunker fragmenting
+short input (fixed v2.0.0 in `split_text`; never emit tiny chunks — the model rambles on OOD
+fragments).
 
-## If a user says it's broken — read this before debugging
+## Do NOT
+- Change the decoding contract: **greedy temp 0**, **en-GB** phonemes, **reference-free** (a
+  phoneme-parity gate enforces the match to training).
+- Re-introduce aggressive per-sentence chunking; add `torch`/transformers to the engine (it's
+  llama.cpp + onnxruntime, frozen, venv-free); make it multi-speaker; or point users at the retired
+  v1 launcher (`start.sh` / `server/`).
 
-**Get the diagnostics report first; don't theorise.** `Save report` in the launcher, or
-`http://localhost:8080/diagnostics`, or the logs in `~/Library/Application Support/Roo Voice/logs/`
-(macOS) / `%LOCALAPPDATA%\Roo Voice\logs\` (Windows). It carries hardware, runtime, versions,
-timings and the real traceback.
-
-The two reports that motivated v1.1.0, both of which looked like model bugs and were not (IP-176):
-
-1. **"The installer never completes"** — it was warming up. The first run compiles GPU kernels:
-   **~4–5 min on a MacBook Air**, <1 min on a Mac Studio. v1.1.0 does this behind a progress bar
-   *before* opening the UI. Measured settled speed per sentence: **M1 Max ~10–11 s · M4 Air ~55 s ·
-   RTX 5060 Ti INT4 ~15 s**. ~55 s on an Air-class Mac is normal.
-2. **"Loads but never generates" (Windows/NVIDIA)** — `pip install torch` on Windows yields a
-   **CPU-only** wheel (~122 MB; the CUDA build is ~2.5 GB and only on PyTorch's index). The app then
-   silently ran on CPU. Fix:
-   `pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128`
-
-**Do not:**
-- remove `reference.wav`, or change the `DC` decoding contract in `server/roo_serve.py` (IP-172)
-- upgrade `transformers` (pinned `==5.0.0`; the model's remote code targets it)
-- try to make it reference-free/multi-speaker
-- **re-introduce a silent CPU fallback** — if the accelerator is missing the server must refuse to
-  start with an actionable message. A server that looks healthy and never generates is the bug.
-- **add `torch` to `requirements-cuda.txt`** — it must come from the cu128 index, never PyPI
-- hardcode a runtime label — derive it from the loaded model (v1.0 reported `MLX-8bit` while serving
-  mlx4, and `INT8` while serving int4)
-
-📄 **Full detail, hardware table, and troubleshooting: see [`AGENTS.md`](AGENTS.md).**
+Model: <https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS> (+ `-GGUF`).

@@ -1,117 +1,102 @@
-# AGENTS.md — setup guide for coding agents
+# AGENTS.md — guide for coding agents
 
-You are a coding agent helping a user run **Roo Voice** — a local text-to-speech app for a single,
-fixed voice — on their own machine. Your job: get it running with the least friction, using the
-one-command launcher, and only fall back to manual steps if that fails. Do **not** change the voice
-config; it is intentionally baked in.
+You are a coding agent working on **Roo Voice** — a local, single-voice text-to-speech desktop app.
+As of **v2.0.0** this is a **native app** (Tauri), not a clone-and-run script. Two audiences below:
+helping a **user** install it, or working on the **codebase**. Don't change the locked voice contract
+(§ Do NOT).
 
-## What this repo is
+## What this repo is (v2)
 
-A local TTS app that serves one reference-conditioned voice ("Roo") behind a small web UI and an
-OpenAI-compatible `POST /v1/audio/speech` endpoint. Two runtimes are supported and the launcher picks
-the right one automatically:
+A cross-platform desktop app (macOS / Windows / Linux) that runs one fixed voice ("Roo") entirely
+on-device. Architecture:
 
-- **Apple Silicon Mac** → MLX 4-bit (`abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4`, default) or 8-bit (`…_mlx8`).
-- **NVIDIA GPU** (Linux/Windows) → transformers INT4 NF4 (`…_int4`, default), INT8 (`…_int8`), or BF16 (`…_bf16`).
-- **AMD / any GPU / CPU** → GGUF Q4_K_M (`…_GGUF`) via llama.cpp (Vulkan/ROCm; experimental on AMD). NPU → ONNX (`…_onnx`).
-- The installer launcher has a **Runtime** dropdown (auto-detect, or pick a specific build); env `ROO_RUNTIME`/`ROO_MODEL` override in the CLI flow.
-
-The voice is fixed: the bundled `reference.wav` is served internally and the decoding settings are
-locked. Users only send text.
-
-## The happy path (do this first)
-
-```bash
-# macOS / Linux
-./start.sh
-# Windows (NVIDIA)
-start.bat
+```
+Tauri shell (Rust) ── supervises ──► roo-engine sidecar (one frozen binary, no venv)
+  window · tray · updater · model download        phonemize(espeak-ng, en-GB)
+  · sidecar lifecycle · signing                   → speech codes (llama.cpp, GGUF, GREEDY)
+        │ loopback HTTP                            → waveform (NeuCodec int8 ONNX, CPU)
+  WebView UI (React): Generate · Listen · Studio   → 24 kHz WAV  ·  /v1/audio/speech + /healthz
+  (compose/join) · live visualizer · Settings
 ```
 
-That auto-detects hardware, creates a `.venv`, installs the right `server/requirements-*.txt`,
-downloads the correct model from Hugging Face on first run, and opens `http://localhost:8080/`.
-First run is slow (model download 3–6 GB + deps); afterwards it starts in seconds.
+The voice model downloads on first run per `app/engine/freeze/manifest.json` (HF URL + **sha256**);
+it is not bundled. Everything is on a loopback port the shell manages. The only network traffic is
+the one-time model download (Hugging Face) and the update check (GitHub).
 
-To force a specific NVIDIA model:
-```bash
-ROO_MODEL=abliter8-ai/Roo-Voice_MOSS_TTS_LT_bf16 ./start.sh   # full precision
-```
-Change the port with `PORT=8090 ./start.sh`.
+**v1 (MOSS-TTS, Python launcher + browser) is retired** but kept in-repo for reference
+(`installers/`, `server/`, `web/`, `start.sh`) and as release `v1.1.1`. Do not send users there.
 
-## Hardware requirements (tell the user if theirs doesn't match)
+## Helping a USER install it
 
-| Hardware | Model | Approx. memory |
+There is no build step for users — point them at a signed installer:
+
+- **GitHub Releases** (Latest = v2.0.0): <https://github.com/abliter8-ai/roo-voice-tts/releases/latest>
+- **Direct mirror**: `https://appinstall.ruinpilot.plus/roo-voice-{macos,winx64,linux}-v2_0_0.{dmg,exe,AppImage}`
+
+| Platform | File | Notes |
 |---|---|---|
-| Apple Silicon (M1–M4) | MLX 4-bit, ~2.3 GB (default) | ~4 GB unified |
-| NVIDIA Turing+ (RTX 20-series and newer) | INT4 NF4, ~3.5 GB (default) | ~4 GB VRAM |
-| NVIDIA, full precision | BF16, ~5.8 GB | ~9–10 GB VRAM |
+| macOS 14+ (Apple Silicon) | `…_aarch64.dmg` | signed & notarized; Metal |
+| Windows 10/11 (x64) | `…_x64-setup.exe` / `.msi` | GPU via Vulkan, CPU fallback |
+| Linux x64 (glibc 2.35+) | `.AppImage` (self-updating) / `.deb` / `.rpm` | GPU via Vulkan, CPU fallback |
 
-No Intel-Mac, AMD-GPU, or CPU-practical path — generation on CPU is far too slow to use.
+First launch downloads the voice model (~740 MB, resumable, checksum-verified); later launches take
+seconds. **No GPU required** — a modern x86-64 CPU with **AVX2** (≈2013+) runs it at ~real-time;
+~2 GB free RAM. Not supported: Intel Macs, native Windows-ARM64 (the x64 build under emulation
+produces silence — numerics diverge), pre-AVX2 CPUs.
 
-## Manual setup (only if the launcher fails)
+## Working on the CODEBASE
 
-```bash
-python3 -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-python -m pip install -U pip
-# Apple Silicon:
-python -m pip install -r server/requirements-mlx.txt
-python server/roo_serve.py --runtime mlx \
-  --model abliter8-ai/Roo-Voice_MOSS_TTS_LT_mlx4 --reference reference.wav --port 8080
-# NVIDIA:
-python -m pip install -r server/requirements-cuda.txt
-python server/roo_serve.py --runtime transformers \
-  --model abliter8-ai/Roo-Voice_MOSS_TTS_LT_int4 \
-  --codec OpenMOSS-Team/MOSS-Audio-Tokenizer --reference reference.wav --port 8080
-```
+- **`app/`** — the Tauri v2 project.
+  - `app/src/` — React UI (`App.tsx`, `screens/`, `design/` = the ported Claude Design system,
+    `engine.ts` = the loopback client + audio player, `compose.ts` = Studio's offline WAV render).
+  - `app/src-tauri/` — Rust shell (`src/lib.rs` spawns/supervises the sidecar, hands its port to the
+    WebView, tears it down cleanly), `tauri.conf.json`, `entitlements.plist`.
+  - `app/engine/roo_engine/` — the Python sidecar: `engine.py` (pipeline + `split_text` chunker),
+    `server.py` (HTTP surface, history, `/diagnostics`), `__main__.py` (entrypoint, model resolve).
+  - `app/engine/freeze/` — PyInstaller freeze per OS (`build-macos.sh` / `build-linux.sh` /
+    `build-windows.ps1`), `presign-macos.sh`, and `manifest.json` (the model pin).
+- **Build locally**: `app/engine/freeze/build-<os>.sh` then `cd app && npm ci && npm run tauri build`.
+  The freeze bundles espeak-ng + the NeuCodec ONNX decoder + a prebuilt `llama-server`; the engine
+  is a single binary — no runtime pip/venv.
+- **CI**: `.github/workflows/build-v2.yml` builds all three OSes on tag push, signs/notarizes macOS
+  (incl. DMG staple), emits the updater `latest.json`, and creates a draft release. Public repo →
+  free runners.
+- **The model contract is locked** (from IP-177): **GREEDY** (temperature 0, top_k 1), espeak-ng
+  **en-GB** phonemes with `preserve_punctuation, with_stress` — this MUST match training byte-for-byte
+  (a parity gate enforces it), **reference-free** single voice, NeuCodec 24 kHz decode.
 
-## Using the voice (share with the user)
+## Troubleshooting
 
-- Keep inputs to a **sentence or two (~15 s)** — it's a short-clip single-voice model; quality drifts on
-  long text.
-- **Punctuation** shapes the pauses. **No SSML / markup** (it's ignored).
-- For **longer audio**: the web UI has a **Compose** button (enter one sentence per line → it stitches
-  them in the browser into one WAV). There's also `tools/compose.py` for scripting (that one needs
-  `ffmpeg` on PATH; the web UI does not).
+**Get the diagnostics report first — don't theorise.** In the app: **Settings → Save diagnostics
+report** (a redacted JSON: platform, versions, model, timings, last error), or
+`GET http://127.0.0.1:<port>/diagnostics`, or the engine log in the app-data dir
+(`~/Library/Application Support/ai.abliter8.roo-voice/` on macOS,
+`%APPDATA%\ai.abliter8.roo-voice\` on Windows).
 
-## Troubleshooting (common, in order of likelihood)
-
-**Step 1 — get the diagnostics report. Do not theorise from a description.**
-
-- Launcher → **Save report** (it appears automatically on failure) → `~/Desktop/roo-voice-report.txt`
-- Or, while running: `curl -s localhost:8080/diagnostics`
-- Or the logs: `~/Library/Application Support/Roo Voice/logs/` (macOS) · `%LOCALAPPDATA%\Roo Voice\logs\` (Windows)
-
-It carries hardware, chip, RAM, runtime, model, quantisation, torch/mlx versions,
-`torch.cuda.is_available()`, the device actually in use, warm-up seconds, recent generation timings
-and full tracebacks. Home paths are redacted to `~`. Both v1.0 field reports were misdiagnosed as
-model bugs and would have been obvious from this file.
-
-
-1. **`transformers` version error / `generate` fails on NVIDIA** — it must be pinned to `5.0.0`
-   (the model's remote code). `requirements-cuda.txt` pins it; don't upgrade it.
-2. **`bitsandbytes` / CUDA import error** — the user isn't on a CUDA GPU, or the torch/CUDA build
-   mismatches. Confirm `nvidia-smi` shows a GPU.
-3. **Blackwell (RTX 50-series) fails to use the GPU** — install the CUDA 12.8 PyTorch first:
-   `pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128`, then re-run.
-4. **Out of memory (NVIDIA)** — the INT4 model is the default and the smallest; close other GPU apps.
-5. **`ffmpeg not found`** — only affects the CLI `tools/compose.py`. Install ffmpeg
-   (`brew install ffmpeg` / `apt install ffmpeg` / `winget install ffmpeg`). The app and UI don't need it.
-6. **Port already in use** — set `PORT=...`.
-7. **Slow first run** — the server now WARMS UP before reporting ready (IP-176), so the cold
-   kernel-compile cost is paid at startup, not on the user's first sentence. Warm-up takes ~4–5 min
-   on a MacBook Air, <1 min on a Mac Studio, once (kernels are cached afterwards).
-   Measured settled speed per sentence (~4.4 s of audio), 2026-07-17:
-   **Mac Studio M1 Max ~10–11 s (2.6×) · MacBook Air M4 ~55 s (12×) · RTX 5060 Ti INT4 ~15 s (3.5×)**.
-   ~55 s on an Air-class Mac is normal, not a fault.
+- The status pill tells the truth: `downloading` (honest bytes) → `loading` → `warming` → `ready`.
+  First launch spends a while in `downloading` (~740 MB). `warming` pre-compiles GPU pipelines so the
+  **first** generation is fast (a full-sentence warm-up, since cold Vulkan prefill was ~13 tok/s vs
+  ~18k warm).
+- **Garbled / rambling / pseudo-foreign gibberish mid-clip** — historically caused by the chunker
+  fragmenting short input into out-of-distribution pieces (the model was trained on whole utterances;
+  a 2-word prompt makes it ramble to fill space). Fixed in v2.0.0 by merging sentences
+  (`split_text`); if it recurs, that's the place to look — never emit tiny chunks.
+- **"App can't be opened" on macOS** — the DMG is notarized+stapled as of v2.0.0; if a hand-built DMG
+  isn't, staple it (`xcrun stapler staple`) or the app inside will still launch (it's separately
+  notarized).
 
 ## Do NOT
 
-- Don't remove or replace `reference.wav` — it *is* the voice.
-- Don't change the decoding contract in `server/roo_serve.py` (`DC`) — it's the accepted setting.
-- Don't upgrade `transformers` past 5.0.0 for the NVIDIA runtime.
-- Don't try to make it multi-speaker or reference-free — this is a fixed single voice.
+- Don't change the decoding contract: **greedy temp 0**, **en-GB** phonemes, **reference-free**. The
+  model was trained for exactly this; changing any of it breaks the voice or the phoneme-parity gate.
+- Don't re-introduce aggressive per-sentence chunking — merge short sentences (§ Troubleshooting).
+- Don't add `torch`/transformers to the engine — inference is **llama.cpp** (GGUF) now, decode is
+  onnxruntime. The engine ships as a frozen binary; keep it venv-free.
+- Don't try to make it multi-speaker or reference-conditioned — it is a fixed single voice.
+- Don't point users at the v1 launcher (`start.sh` / `server/`) — it's retired.
 
 ## Reference
 
-- Models: <https://huggingface.co/abliter8-ai> (`Roo-Voice_MOSS_TTS_LT_{mlx4,mlx8,int4,int8,bf16,GGUF,onnx}`).
-- Recipes with more detail: `recipes/mlx-apple-silicon.md`, `recipes/nvidia-cuda.md`.
+- Model: <https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS> (+ `-GGUF` for the quants).
+- Base: [NeuTTS-Air](https://huggingface.co/neuphonic/neutts-air) · decoder
+  [NeuCodec](https://huggingface.co/neuphonic/neucodec).
