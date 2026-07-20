@@ -205,25 +205,41 @@ class OnnxDecoder:
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+")
 
 
-def split_text(text: str, max_chars: int = 300) -> list:
-    """Sentence-level chunking so arbitrary-length input stays inside the trained
-    per-utterance envelope; long sentences fall back to comma/space splits."""
-    out = []
-    for sent in _SENTENCE_SPLIT.split(text.strip()):
-        sent = sent.strip()
-        if not sent:
-            continue
-        while len(sent) > max_chars:
-            cut = sent.rfind(",", 0, max_chars)
-            if cut < max_chars // 2:
-                cut = sent.rfind(" ", 0, max_chars)
-            if cut <= 0:
-                cut = max_chars
-            out.append(sent[:cut + 1].strip())
-            sent = sent[cut + 1:].strip()
-        if sent:
-            out.append(sent)
-    return out
+def split_text(text: str, max_chars: int = 240) -> list:
+    """Chunk long input to stay inside the trained per-utterance envelope, while
+    MERGING short sentences so no chunk is a tiny out-of-distribution fragment.
+
+    The model was trained on whole utterances; feeding it a 2-word fragment like
+    "What's up?" makes it ramble and hallucinate (pseudo-foreign gibberish) to
+    fill space — the mid-sentence garble reported on v2.0.0. So we greedily pack
+    consecutive sentences up to max_chars (intra-utterance punctuation gives
+    natural pauses), and only hard-split a single sentence that alone exceeds the
+    cap. "Hey lads. What's up? Are you ready?" -> ONE chunk, not three."""
+    sentences = [s.strip() for s in _SENTENCE_SPLIT.split(text.strip()) if s.strip()]
+    chunks = []
+    cur = ""
+    for sent in sentences:
+        if len(sent) > max_chars:
+            if cur:
+                chunks.append(cur)
+                cur = ""
+            while len(sent) > max_chars:
+                cut = sent.rfind(",", 0, max_chars)
+                if cut < max_chars // 2:
+                    cut = sent.rfind(" ", 0, max_chars)
+                if cut <= 0:
+                    cut = max_chars
+                chunks.append(sent[:cut + 1].strip())
+                sent = sent[cut + 1:].strip()
+            cur = sent
+        elif cur and len(cur) + 1 + len(sent) > max_chars:
+            chunks.append(cur)
+            cur = sent
+        else:
+            cur = f"{cur} {sent}".strip() if cur else sent
+    if cur:
+        chunks.append(cur)
+    return chunks
 
 
 class Engine:
