@@ -3,6 +3,16 @@
 The generation contract is the one proven in IP-177 eval (gguf_e2e.py) and locked
 by David's ear: GREEDY (temperature 0, top_k 1), en-gb espeak phonemes with the
 exact training-time phonemizer settings, stop at <|SPEECH_GENERATION_END|>.
+
+Two engine-side robustness passes sit around that contract (added after the
+elevated field-issue reports, measured on the shipped Q4_K_M path):
+  * INPUT normalization (normalize.py) — expands numbers/dates/times/currency/
+    symbols to spoken words before espeak, which otherwise reads "-" as "dash",
+    spells IDs, and mangles years. This is the single biggest source of the
+    reported breakages on real-world (non-prose) input.
+  * DERAIL guard (is_derailed / trim_drone below) — greedy decoding can lock
+    into a repeating code and drone ("EEEE") to the length cap; we detect that
+    and re-split/trim instead of shipping the tone.
 """
 import json
 import os
@@ -15,11 +25,24 @@ import urllib.request
 
 import numpy as np
 
+from .normalize import normalize
+
 SPEECH0 = 151671          # token id of <|speech_0|>
 GEN_END = 151670          # token id of <|SPEECH_GENERATION_END|>
 SAMPLE_RATE = 24000
 MAX_CODES_PER_CHUNK = 1024   # ~20.5 s of audio; matches the trained envelope
 SENTENCE_JOIN_SILENCE_S = 0.15
+
+# Derail guard: a healthy chunk terminates (< MAX_CODES_PER_CHUNK) with diverse
+# codes (unique/len ~0.7-0.9); a greedy derail hits the cap AND its tail collapses
+# to a handful of repeating codes (measured Q8 drone: 5 unique values in the last
+# 200 codes, one code repeated 50x = the sustained "EEEE" tone). Those two
+# conditions together are the signature we act on.
+DERAIL_TAIL = 200            # codes at the end to inspect
+DERAIL_TAIL_UNIQ_MIN = 20    # fewer unique than this in the tail => collapsed
+DERAIL_RESPLIT_CHARS = 120   # re-chunk a derailed span this tight, then retry
+DRONE_TRIM_WIN = 100         # sliding window for tail trimming
+DRONE_TRIM_RATIO = 0.30      # unique/len below this marks the drone onset
 
 
 class EngineError(RuntimeError):
@@ -242,6 +265,27 @@ def split_text(text: str, max_chars: int = 240) -> list:
     return chunks
 
 
+def is_derailed(codes: list) -> bool:
+    """Greedy-drone detector: True when generation hit the code cap AND the tail
+    collapsed to a few repeating values. A chunk that terminates on its own, or
+    caps while still diverse, is not a derail."""
+    if len(codes) < MAX_CODES_PER_CHUNK:
+        return False
+    tail = codes[-DERAIL_TAIL:]
+    return len(set(tail)) < DERAIL_TAIL_UNIQ_MIN
+
+
+def trim_drone(codes: list) -> list:
+    """Fallback when a minimal fragment still drones: cut from the onset of the
+    first low-diversity window to the end, keeping the clean speech before the
+    tone. Never returns empty (a drone at index 0 leaves the codes untouched)."""
+    n = len(codes)
+    for i in range(0, n - DRONE_TRIM_WIN):
+        if len(set(codes[i:i + DRONE_TRIM_WIN])) / DRONE_TRIM_WIN < DRONE_TRIM_RATIO:
+            return codes[:i] if i > 0 else codes
+    return codes
+
+
 class Engine:
     """Owns the full pipeline and a serialized generation slot."""
 
@@ -252,7 +296,35 @@ class Engine:
         self.gen_lock = threading.Lock()
         self.progress = {"phase": "idle", "chunk": 0, "chunks": 0, "started": None}
 
+    def _codes_for(self, text: str) -> list:
+        """Phonemize one span and run one greedy generation -> speech codes."""
+        phones = self.phonemize(text)
+        prompt = (
+            "user: Convert the text to speech:"
+            f"<|TEXT_PROMPT_START|>{phones}<|TEXT_PROMPT_END|>\n"
+            "assistant:<|SPEECH_GENERATION_START|>"
+        )
+        return self.llama.complete(prompt)
+
+    def _guarded_codes(self, text: str, depth: int = 0) -> list:
+        """Speech codes for one chunk, guarded against the greedy derail. If the
+        output drones, re-split the span once (tighter) and regenerate each piece
+        — a shorter prompt changes the argmax path and usually terminates cleanly.
+        If a minimal fragment still drones, trim the tone tail off."""
+        codes = self._codes_for(text)
+        if not is_derailed(codes):
+            return codes
+        if depth == 0:
+            subs = split_text(text, max_chars=DERAIL_RESPLIT_CHARS)
+            if len(subs) > 1:
+                out = []
+                for s in subs:
+                    out.extend(self._guarded_codes(s, depth + 1))
+                return out
+        return trim_drone(codes)
+
     def generate(self, text: str) -> np.ndarray:
+        text = normalize(text)
         chunks = split_text(text)
         if not chunks:
             raise EngineError("no speakable text in input")
@@ -264,13 +336,7 @@ class Engine:
             try:
                 for i, chunk in enumerate(chunks):
                     self.progress["chunk"] = i + 1
-                    phones = self.phonemize(chunk)
-                    prompt = (
-                        "user: Convert the text to speech:"
-                        f"<|TEXT_PROMPT_START|>{phones}<|TEXT_PROMPT_END|>\n"
-                        "assistant:<|SPEECH_GENERATION_START|>"
-                    )
-                    codes = self.llama.complete(prompt)
+                    codes = self._guarded_codes(chunk)
                     pieces.append(self.decoder.decode(codes))
                     if i < len(chunks) - 1:
                         pieces.append(gap)
