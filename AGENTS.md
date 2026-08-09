@@ -30,8 +30,8 @@ the one-time model download (Hugging Face) and the update check (GitHub).
 
 There is no build step for users — point them at a signed installer:
 
-- **GitHub Releases** (Latest = v2.0.0): <https://github.com/abliter8-ai/roo-voice-tts/releases/latest>
-- **Direct mirror**: `https://appinstall.ruinpilot.plus/roo-voice-{macos,winx64,linux}-v2_0_0.{dmg,exe,AppImage}`
+- **GitHub Releases** (Latest = v2.1.0): <https://github.com/abliter8-ai/roo-voice-tts/releases/latest>
+- **Direct mirror**: `https://appinstall.ruinpilot.plus/roo-voice-{macos,winx64,linux}-v2_1_0.{dmg,exe,AppImage}`
 
 | Platform | File | Notes |
 |---|---|---|
@@ -81,6 +81,20 @@ report** (a redacted JSON: platform, versions, model, timings, last error), or
   fragmenting short input into out-of-distribution pieces (the model was trained on whole utterances;
   a 2-word prompt makes it ramble to fill space). Fixed in v2.0.0 by merging sentences
   (`split_text`); if it recurs, that's the place to look — never emit tiny chunks.
+- **Wrong reading of dates / numbers / IDs** (v2.1.0) — `roo_engine/normalize.py` rewrites the
+  structure espeak mangles (ISO dates, hyphenated ranges/IDs, currency order, broken abbreviations)
+  and leaves digits for espeak to read. **It performs no number-to-word conversion, deliberately**:
+  espeak's en-GB front-end already reads integers, decimals, ordinals, percentages and clock times
+  correctly, and reimplementing those only replaces a correct reading with a buggy one. Before
+  adding a rule, measure the failure through the **library** phonemizer (`Phonemizer()`), not the
+  espeak CLI — they disagree, and the library is what the engine runs (that difference is why
+  `09:45` needed a rule at all). Rules are covered by `app/engine/tests/`.
+- **Clip ends mid-sentence / last words missing** (fixed v2.1.0) — a generation that stops on the
+  1024-code budget rather than `<|SPEECH_GENERATION_END|>` did not finish. `split_text` caps chunks
+  by CHARACTERS but the budget is TIME, so slow content (spelled digits, long numbers) overran it
+  and the tail was silently dropped. `Engine._audio_for` now re-splits any capped span so each
+  piece gets its own budget. Guard activity is reported in `/diagnostics` as `guard_events` — a
+  `dropped` entry is the one case where output is knowingly incomplete.
 - **"App can't be opened" on macOS** — the DMG is notarized+stapled as of v2.0.0; if a hand-built DMG
   isn't, staple it (`xcrun stapler staple`) or the app inside will still launch (it's separately
   notarized).

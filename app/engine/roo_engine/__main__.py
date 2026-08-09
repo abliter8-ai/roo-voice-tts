@@ -113,7 +113,7 @@ def main():
                                 os.path.join(args.data_dir, "llama-server.log"))
             llama_ref["llama"] = llama   # visible to shutdown BEFORE start
             llama.start()
-            app["diagnostics"] = diagnostics_factory(args.data_dir, llama)
+            app["diagnostics"] = diagnostics_factory(args.data_dir, llama, app)
             engine = Engine(llama, decoder, phonemizer)
             set_state(status="warming")
             # Pay ALL backend compile before ready. A short warm-up only builds

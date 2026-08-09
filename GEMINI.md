@@ -6,8 +6,8 @@ voice contract — is in [`AGENTS.md`](AGENTS.md); read it. The essentials:
 
 ## Helping a user
 There's no build step for users — point them at a signed installer:
-- Releases (Latest = v2.0.0): <https://github.com/abliter8-ai/roo-voice-tts/releases/latest>
-- Mirror: `https://appinstall.ruinpilot.plus/roo-voice-{macos,winx64,linux}-v2_0_0.{dmg,exe,AppImage}`
+- Releases (Latest = v2.1.0): <https://github.com/abliter8-ai/roo-voice-tts/releases/latest>
+- Mirror: `https://appinstall.ruinpilot.plus/roo-voice-{macos,winx64,linux}-v2_1_0.{dmg,exe,AppImage}`
 
 First launch downloads the voice model (~740 MB, resumable, checksum-verified). No GPU required — a
 modern AVX2 CPU runs it at ~real-time. macOS 14+ arm64 / Windows 10-11 x64 / Linux x64. Not
