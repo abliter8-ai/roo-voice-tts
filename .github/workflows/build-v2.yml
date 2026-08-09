@@ -49,6 +49,14 @@ jobs:
         with:
           node-version: 22
 
+      - name: Engine guard tests
+        # No model, no llama-server, no espeak — numpy is the only import the
+        # engine module needs at load time. Cheap, and it gates the normalizer
+        # and the code-budget guard on every tagged build.
+        run: |
+          python -m pip install --quiet numpy
+          python -m unittest discover -s app/engine/tests -v
+
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Linux system deps (webkit + espeak)

@@ -213,7 +213,7 @@ def make_handler(app):
     return Handler
 
 
-def diagnostics_factory(data_dir: str, llama):
+def diagnostics_factory(data_dir: str, llama, app=None):
     def diagnostics():
         log_tail = ""
         try:
@@ -229,6 +229,12 @@ def diagnostics_factory(data_dir: str, llama):
             "data_dir": data_dir,
             "llama_alive": bool(llama and llama.alive()),
             "llama_log_tail": log_tail,
+            # Derail-guard activity: empty on a healthy run. A "dropped" entry
+            # means a span was replaced by silence rather than a sustained tone —
+            # the one case where output is knowingly incomplete, so it must be
+            # visible in a user's report and not just inferred from the audio.
+            "guard_events": list(getattr(app.get("engine"), "guard_events", []))
+                            if app else [],
         }
     return diagnostics
 

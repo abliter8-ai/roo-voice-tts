@@ -1,0 +1,27 @@
+# Fast logic gate for the engine sidecar.
+#
+# build-v2.yml only runs on tag pushes and the v2-tauri-app branch, so pull
+# requests reached review with nothing verified — that is how a normalizer that
+# crashed on 13-digit numbers got as far as a PR. This job is seconds long and
+# runs on every PR and push: no model, no llama-server, no espeak, no Tauri
+# build, just the normalizer and code-budget guard logic.
+name: engine-tests
+
+on:
+  pull_request:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/engine/**"
+      - ".github/workflows/engine-tests.yml"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --quiet numpy
+      - run: python -m unittest discover -s app/engine/tests -v
