@@ -18,7 +18,7 @@ works offline after installation; updates remain separate.
 | **Windows 10/11** (x64) | `Roo.Voice_3.0.0_x64-setup.exe` | Vulkan runtime and CPU fallback; hardware coverage below |
 | **Linux** (x64, Ubuntu 22.04+ / glibc 2.35+) | `Roo.Voice_3.0.0_amd64.AppImage` or `.deb` | Vulkan runtime and CPU fallback |
 
-⬇️ **[Latest release](https://github.com/abliter8-ai/roo-voice-tts/releases/latest)**
+⬇️ **[Latest release](https://github.com/abliter8-ai/roo-voice-tts/releases/latest)** · [SHA256 checksums](https://github.com/abliter8-ai/roo-voice-tts/releases/download/v3.0.0/SHA256SUMS)
 
 The raw bundled model assets total **1,283,766,112 bytes** before installer compression and runtime
 files. No first-run model download is required.
@@ -40,11 +40,11 @@ External networking was blocked and the installed resources were write-protected
 
 | Workload | Generation time | Audio duration |
 |---|---|---|
-| Short clip, warm repeat | 3.17 seconds | 5.36 seconds |
-| Longer passage, two joined chunks | 20.24 seconds | 42.63 seconds |
+| Short clip, warm repeat | 3.10 seconds | 5.36 seconds |
+| Longer passage, two joined chunks | 20.31 seconds | 42.63 seconds |
 
-The native server reported **Metal**. Initial load and warmup took 26.55 seconds; a restart took
-4.15 seconds. The sampled peak sum of engine and native-server RSS was 3.40 GiB. This does not
+The native server reported **Metal**. Initial load and warmup took 27.65 seconds; a restart took
+4.12 seconds. An earlier run of the same native runtime measured a peak sum of engine and native-server RSS of 3.40 GiB. This does not
 measure all GPU memory and is not a minimum-RAM requirement. Other devices will have different
 timings.
 
