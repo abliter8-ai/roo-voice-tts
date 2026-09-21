@@ -103,7 +103,7 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not $vs) { throw "x64 MSVC toolset not found" }
           $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
           if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found: $vcvars" }
-          $dump = cmd.exe /d /s /c "`"$vcvars`" amd64 && set"
+          $dump = cmd.exe /d /c "call `"$vcvars`" && set"
           if ($LASTEXITCODE -ne 0) { throw "vcvars64.bat failed: $LASTEXITCODE" }
           foreach ($line in $dump) {
             if ($line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$' -and $Matches[1] -in @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCToolsInstallDir', 'VCToolsRedistDir', 'VCINSTALLDIR', 'VSINSTALLDIR', 'WindowsSdkDir', 'WindowsSDKVersion', 'UniversalCRTSdkDir', 'UCRTVersion')) {
