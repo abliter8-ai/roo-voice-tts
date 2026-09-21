@@ -48,11 +48,18 @@ The native server reported **Metal**. Initial load and warmup took 26.55 seconds
 measure all GPU memory and is not a minimum-RAM requirement. Other devices will have different
 timings.
 
-The installed Windows x64 release also passes offline CPU synthesis, full-reference loading,
-repeat generation, history preservation and restart. On the hosted CI runner, a warm request
-took 37.22 seconds for 5.20 seconds of audio; the longer passage took 199.34 seconds for 40.71
-seconds of audio. These CPU measurements do not describe Vulkan performance. Windows GPU
-performance has not been measured. Linux installer qualification is still in progress.
+The downloaded Linux DEB engine was also tested on a **Radeon 8060S** using Vulkan, through
+its packaged launcher with external networking blocked. A warm short request took **1.23
+seconds for 5.04 seconds of audio**; the two-chunk passage took **10.29 seconds for 43.99
+seconds of audio**. Full-reference loading, repeat generation, history preservation, restart
+and clean shutdown passed. The AppImage was built and its library layout checked separately;
+these GPU timings come from the DEB payload.
+
+Installed Linux and Windows x64 packages pass offline CPU synthesis in CI. The Linux runner
+took 18.98 seconds for 5.12 seconds of audio, and 101.02 seconds for the 41.75-second passage.
+The Windows runner took 44.30 seconds for 5.20 seconds of audio, and 219.31 seconds for the
+40.71-second passage. Hosted CPU timings vary; they do not describe GPU performance.
+Windows GPU performance has not been measured.
 
 The Windows and Linux x64 builds require an AVX2-capable CPU with FMA, F16C and BMI2 support.
 The release build logs confirm these instruction-set targets; older x64 CPUs are not qualified.
@@ -90,7 +97,7 @@ cd app && npm ci && npm run tauri build
 
 CI builds all three platforms from `.github/workflows/build-v2.yml`; releases are cut from tags.
 Supported targets are macOS 14+ Apple Silicon with Metal, Windows x64 and Linux x64 with Vulkan
-candidate paths plus CPU fallback. Linux needs the Vulkan loader (`libvulkan1`) and OpenMP
+backends plus CPU fallback. Linux needs the Vulkan loader (`libvulkan1`) and OpenMP
 runtime (`libgomp1`), plus Tauri's GTK/WebKit libraries. The Debian package declares these
 dependencies. Vulkan acceleration also needs a compatible installed GPU driver.
 
