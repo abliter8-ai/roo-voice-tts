@@ -1,0 +1,86 @@
+name: qualify-release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/roo-voice-v3-qwen-bundled]
+    paths:
+      - .github/workflows/qualify-release.yml
+      - app/engine/freeze/offline-smoke.py
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installed:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify Windows network isolation before downloading the installer
+        shell: pwsh
+        run: |
+          Get-NetFirewallProfile | Select-Object Name, Enabled
+          @'
+          import importlib.util, os, pathlib, socket, subprocess, sys
+          spec = importlib.util.spec_from_file_location('offline', 'app/engine/freeze/offline-smoke.py')
+          offline = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(offline)
+          with socket.create_connection(('1.1.1.1', 443), timeout=3):
+              pass
+          name = 'RooVoiceOfflinePreflight-' + str(os.getpid())
+          code = "import socket,sys\ns=socket.socket();s.bind(('127.0.0.1',0));s.listen(1);port=s.getsockname()[1]\nc=socket.create_connection(('127.0.0.1',port),timeout=3);p,_=s.accept();p.sendall(b'x');assert c.recv(1)==b'x';p.close();c.close();s.close()\ns=socket.socket();s.settimeout(3)\ntry:s.connect(('1.1.1.1',443))\nexcept OSError:print('external blocked; loopback TCP round-trip passed');sys.exit(0)\nsys.exit(17)"
+          try:
+              offline.firewall(pathlib.Path(sys.executable), name, True)
+              subprocess.run([sys.executable, '-c', code], check=True)
+          finally:
+              offline.firewall(pathlib.Path(sys.executable), name, False)
+          '@ | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\firewall-preflight.py"
+          python "$env:RUNNER_TEMP\firewall-preflight.py"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows network-isolation preflight failed' }
+
+      - name: Download and install the packaged release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content app/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $download = Join-Path $env:RUNNER_TEMP 'roo-release-download'
+          New-Item -ItemType Directory -Force -Path $download | Out-Null
+          $repo = '${{ github.repository }}'
+          $releases = gh api "repos/$repo/releases?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Release listing failed' }
+          $release = @($releases | Where-Object { $_.tag_name -eq "v$version" })
+          if ($release.Count -ne 1) { throw "Expected one visible release for v$version; found $($release.Count)" }
+          $assetName = "Roo.Voice_${version}_x64-setup.exe"
+          $asset = @($release.assets | Where-Object { $_.name -eq $assetName })
+          if ($asset.Count -ne 1) { throw "Expected one release asset named $assetName; found $($asset.Count)" }
+          $installerPath = Join-Path $download $assetName
+          Invoke-WebRequest -Uri $asset[0].url -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/octet-stream' } -OutFile $installerPath
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $installerPath)) { throw 'Release asset download failed' }
+          $installer = Get-Item $installerPath
+          Get-FileHash $installer.FullName -Algorithm SHA256
+          $dest = Join-Path $env:RUNNER_TEMP 'roo-release-installed'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$dest") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          $engine = Get-ChildItem $dest -Recurse -Filter 'roo-engine.exe' -File | Select-Object -First 1
+          if (-not $engine) { throw 'Installed engine missing' }
+          "ROO_INSTALLED_ENGINE=$($engine.FullName)" >> $env:GITHUB_ENV
+          "ROO_INSTALLED_MANIFEST=$(Join-Path $engine.DirectoryName 'manifest.json')" >> $env:GITHUB_ENV
+
+      - name: Generate offline from the installed release
+        shell: pwsh
+        run: |
+          python app/engine/freeze/offline-smoke.py --engine "$env:ROO_INSTALLED_ENGINE" --manifest "$env:ROO_INSTALLED_MANIFEST" --output "$env:RUNNER_TEMP/roo-release-smoke" --backend CPU
+          if ($LASTEXITCODE -ne 0) { throw 'Installed release smoke failed' }
+
+      - name: Upload installed release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roo-voice-windows-artifact-smoke
+          path: ${{ runner.temp }}/roo-release-smoke
+          if-no-files-found: warn

@@ -1,4 +1,4 @@
-# IP-178 — Roo Voice v2 CI: freeze roo-engine per-OS, build/bundle the Tauri
+# IP-322 — Roo Voice v3 CI: freeze roo-engine per-OS, build/bundle the Tauri
 # app, and (on tag) publish a draft release with updater artifacts + latest.json.
 #
 # Secrets (macOS signing/notarization + updater; workflow degrades gracefully
@@ -10,7 +10,7 @@ name: build-v2
 
 on:
   push:
-    branches: [v2-tauri-app]
+    branches: [main]
     tags: ["v*"]
     paths-ignore:
       - "**.md"
@@ -50,30 +50,77 @@ jobs:
           node-version: 22
 
       - name: Engine guard tests
-        # No model, no llama-server, no espeak — numpy is the only import the
-        # engine module needs at load time. Cheap, and it gates the normalizer
-        # and the code-budget guard on every tagged build.
+        # The native qwentts server and bundled weights are checked after freeze.
         run: |
           python -m pip install --quiet numpy
           python -m unittest discover -s app/engine/tests -v
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Linux system deps (webkit + espeak)
+      - name: Linux system deps (webkit + Vulkan build tools)
         if: startsWith(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
-            librsvg2-dev patchelf espeak-ng-data libespeak-ng1 libpcaudio0
+            librsvg2-dev patchelf libvulkan-dev libvulkan1 xz-utils
 
-      - name: macOS espeak (freeze source only — vendored into the bundle)
-        if: startsWith(matrix.platform, 'macos')
-        run: brew install espeak-ng
+      - name: Linux Vulkan SDK (pinned LunarG glslc)
+        if: startsWith(matrix.platform, 'ubuntu')
+        shell: bash
+        run: |
+          version='1.4.357.0'
+          archive="$RUNNER_TEMP/vulkansdk-linux-x86_64-$version.tar.xz"
+          curl -fsSL --retry 2 \
+            "https://sdk.lunarg.com/sdk/download/$version/linux/vulkansdk-linux-x86_64-$version.tar.xz" \
+            -o "$archive"
+          echo '0f09bf6a0625e346bf004be70b92907e934a4c76606b323441b2baf3a5a0e66d  '"$archive" | sha256sum -c -
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          sdk="$RUNNER_TEMP/$version/x86_64"
+          test -x "$sdk/bin/glslc"
+          echo "VULKAN_SDK=$sdk" >> "$GITHUB_ENV"
+          echo "$sdk/bin" >> "$GITHUB_PATH"
+
+      - name: Windows Vulkan SDK (pinned LunarG release)
+        if: startsWith(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          $version = '1.4.357.0'
+          $installer = Join-Path $env:RUNNER_TEMP "vulkansdk-windows-X64-$version.exe"
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/vulkansdk-windows-X64-$version.exe" -OutFile $installer
+          $process = Start-Process -FilePath $installer -ArgumentList '--accept-licenses', '--default-answer', '--confirm-command', 'install' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Vulkan SDK installer failed: $($process.ExitCode)" }
+          $sdk = "C:\VulkanSDK\$version"
+          if (-not (Test-Path "$sdk\Bin\glslc.exe")) { throw "Vulkan SDK glslc missing: $sdk" }
+          "VULKAN_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Windows MSVC x64 build environment
+        if: startsWith(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs) { throw "x64 MSVC toolset not found" }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found: $vcvars" }
+          $dump = cmd.exe /d /c "call `"$vcvars`" && set"
+          if ($LASTEXITCODE -ne 0) { throw "vcvars64.bat failed: $LASTEXITCODE" }
+          foreach ($line in $dump) {
+            if ($line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$' -and $Matches[1] -in @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCToolsInstallDir', 'VCToolsRedistDir', 'VCINSTALLDIR', 'VSINSTALLDIR', 'WindowsSdkDir', 'WindowsSDKVersion', 'UniversalCRTSdkDir', 'UCRTVersion')) {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
 
       - name: Freeze roo-engine
         env:
           ROO_FREEZE_ENV: ${{ github.workspace }}/.freeze-venv
         run: ${{ matrix.freeze }}
+
+      - name: Verify bundled resources
+        shell: bash
+        run: |
+          python app/engine/freeze/prepare-assets.py --check \
+            --output app/engine/dist/roo-engine
 
       - name: npm ci
         working-directory: app
@@ -107,8 +154,6 @@ jobs:
           bash app/engine/freeze/presign-macos.sh app/engine/dist/roo-engine \
             "$APPLE_SIGNING_IDENTITY" app/src-tauri/entitlements.plist
           # signed engine must still RUN (Team-ID/library-validation interactions)
-          app/engine/dist/roo-engine/roo-engine --phonemize "Signed and still speaking."
-
       - name: Export updater signing key when configured
         shell: bash
         env:
@@ -138,10 +183,95 @@ jobs:
           APPLE_API_KEY_PATH: /tmp/asc-key.p8
         with:
           projectPath: app
+          args: ${{ startsWith(matrix.platform, 'ubuntu') && '--bundles deb,appimage' || '' }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Roo Voice {0}', github.ref_name) || '' }}
           releaseDraft: true
           includeUpdaterJson: true
+
+      - name: Extract macOS shipping artifact for offline smoke
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        run: |
+          archive="$(find app/src-tauri/target/release/bundle -type f -name '*.app.tar.gz' | head -1)"
+          test -n "$archive" || { echo 'no macOS app archive produced' >&2; exit 1; }
+          dest="$RUNNER_TEMP/roo-voice-installed-macos"
+          mkdir -p "$dest"
+          tar -xzf "$archive" -C "$dest"
+          engine="$(find "$dest" -type f -path '*/Contents/Resources/roo-engine/roo-engine' | head -1)"
+          test -x "$engine" || { echo "installed macOS engine not found under $dest" >&2; exit 1; }
+          manifest="$(dirname "$engine")/manifest.json"
+          test -f "$manifest" || { echo "installed macOS manifest not found: $manifest" >&2; exit 1; }
+          printf 'ROO_INSTALLED_ENGINE=%s\nROO_INSTALLED_MANIFEST=%s\n' "$engine" "$manifest" >> "$GITHUB_ENV"
+
+      - name: Extract Linux shipping artifact for offline smoke
+        if: startsWith(matrix.platform, 'ubuntu')
+        shell: bash
+        run: |
+          archive="$(find app/src-tauri/target/release/bundle -type f -name '*.deb' | head -1)"
+          test -n "$archive" || { echo 'no Linux deb produced' >&2; exit 1; }
+          dest="$RUNNER_TEMP/roo-voice-installed-linux"
+          mkdir -p "$dest"
+          dpkg-deb -x "$archive" "$dest"
+          engine="$(find "$dest" -type f -path '*/roo-engine/roo-engine' | head -1)"
+          test -x "$engine" || { echo "installed Linux engine not found under $dest" >&2; exit 1; }
+          manifest="$(dirname "$engine")/manifest.json"
+          test -f "$manifest" || { echo "installed Linux manifest not found: $manifest" >&2; exit 1; }
+          printf 'ROO_INSTALLED_ENGINE=%s\nROO_INSTALLED_MANIFEST=%s\n' "$engine" "$manifest" >> "$GITHUB_ENV"
+
+      - name: Install Windows shipping artifact for offline smoke
+        if: startsWith(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'app/src-tauri/target/release/bundle/nsis' -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'no Windows NSIS installer produced' }
+          $dest = Join-Path $env:RUNNER_TEMP 'roo-voice-installed-windows'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$dest") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Windows installer failed: $($process.ExitCode)" }
+          $engine = Get-ChildItem -Path $dest -Recurse -Filter 'roo-engine.exe' -File | Select-Object -First 1
+          if (-not $engine) { throw "installed Windows engine not found under $dest" }
+          $manifest = Join-Path $engine.DirectoryName 'manifest.json'
+          if (-not (Test-Path $manifest)) { throw "installed Windows manifest not found: $manifest" }
+          "ROO_INSTALLED_ENGINE=$($engine.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ROO_INSTALLED_MANIFEST=$manifest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Offline WAV smoke on installed macOS artifact
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        run: |
+          python app/engine/freeze/offline-smoke.py \
+            --engine "$ROO_INSTALLED_ENGINE" \
+            --manifest "$ROO_INSTALLED_MANIFEST" \
+            --output "$RUNNER_TEMP/roo-voice-installed-smoke" \
+            --backend CPU
+
+      - name: Offline WAV smoke on installed Linux artifact
+        if: startsWith(matrix.platform, 'ubuntu')
+        shell: bash
+        run: |
+          python app/engine/freeze/offline-smoke.py \
+            --engine "$ROO_INSTALLED_ENGINE" \
+            --manifest "$ROO_INSTALLED_MANIFEST" \
+            --output "$RUNNER_TEMP/roo-voice-installed-smoke" \
+            --backend CPU
+
+      - name: Offline WAV smoke on installed Windows artifact
+        if: startsWith(matrix.platform, 'windows')
+        shell: bash
+        run: |
+          python app/engine/freeze/offline-smoke.py \
+            --engine "$ROO_INSTALLED_ENGINE" \
+            --manifest "$ROO_INSTALLED_MANIFEST" \
+            --output "$RUNNER_TEMP/roo-voice-installed-smoke" \
+            --backend CPU
+
+      - name: Upload installed artifact smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roo-voice-${{ matrix.platform }}-installed-smoke
+          path: ${{ runner.temp }}/roo-voice-installed-smoke
+          if-no-files-found: warn
 
       - name: Notarize & staple the DMG (macOS tag builds)
         # tauri-action notarizes+staples the .app but NOT the DMG wrapper, so a

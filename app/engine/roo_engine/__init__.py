@@ -1,6 +1,2 @@
-"""roo-engine — the Roo Voice inference sidecar (IP-178).
-
-phonemize(en-gb) -> llama-server(GGUF, greedy) -> NeuCodec int8 ONNX decode -> WAV.
-Frozen to a single binary per platform; supervised by the Tauri shell.
-"""
-__version__ = "2.0.0"
+"""roo-engine — the Roo Voice Qwen3-TTS inference sidecar (IP-322)."""
+__version__ = "3.0.0"

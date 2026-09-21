@@ -1,14 +1,12 @@
-<p align="center"><img src="assets/app-v2.png" alt="Roo Voice v2" width="820"></p>
-
 # Roo Voice
 
 A desktop text-to-speech app for **one voice — Roo's**: that signature baritone with the estuary
-accent, baked straight into the model weights. Download, type, hear Roo. Everything runs on your
-machine: no account, no cloud, no telemetry, no configuration.
+accent, delivered by the bundled Qwen3-TTS model and Roo2 Full Clone reference. Type, hear Roo.
+Everything runs on your machine: no account, no cloud, no telemetry, no configuration.
 
-**v2.0.0** is a single native app for **macOS, Windows, and Linux** — the model downloads itself on
-first launch, generation is deterministic (same text → same audio, every time), and the app keeps
-itself updated.
+**v3.0.0** is a single native app for **macOS, Windows, and Linux**. Qwen3-TTS 0.6B Base, the
+complete Roo2 Full Clone reference, and the native runtime are bundled in the installer. Speech
+works offline after installation; updates remain separate.
 
 ---
 
@@ -16,14 +14,14 @@ itself updated.
 
 | Platform | File | Notes |
 |---|---|---|
-| **macOS** (Apple Silicon, macOS 14+) | `Roo Voice_x.x.x_aarch64.dmg` | Signed & notarized. Runs on Metal |
-| **Windows 10/11** (x64) | `Roo Voice_x.x.x_x64-setup.exe` | GPU via Vulkan (NVIDIA / AMD / Intel), CPU fallback |
-| **Linux** (x64, Ubuntu 22.04+ / glibc 2.35+) | `.AppImage` (self-updating) or `.deb` | GPU via Vulkan, CPU fallback |
+| **macOS** (Apple Silicon, macOS 14+) | `Roo.Voice_3.0.0_aarch64.dmg` | Signed & notarized. Runs on Metal |
+| **Windows 10/11** (x64) | `Roo.Voice_3.0.0_x64-setup.exe` | Vulkan runtime and CPU fallback; hardware coverage below |
+| **Linux** (x64, Ubuntu 22.04+ / glibc 2.35+) | `Roo.Voice_3.0.0_amd64.AppImage` or `.deb` | Vulkan runtime and CPU fallback |
 
-⬇️ **[Latest release](https://github.com/abliter8-ai/roo-voice-tts/releases/latest)**
+⬇️ **[Latest release](https://github.com/abliter8-ai/roo-voice-tts/releases/latest)** · [SHA256 checksums](https://github.com/abliter8-ai/roo-voice-tts/releases/download/v3.0.0/SHA256SUMS)
 
-First launch downloads the voice model (**~740 MB**, with a real progress bar; resumes if
-interrupted; checksum-verified). After that, launches take seconds.
+The raw bundled model assets total **1,283,766,112 bytes** before installer compression and runtime
+files. No first-run model download is required.
 
 ## What you get
 
@@ -33,83 +31,81 @@ interrupted; checksum-verified). After that, launches take seconds.
 - **Compose** — merge clips into one longer WAV: reorder, set the gap after each clip, optional
   crossfade, export.
 - **Live visualizer** — an audio-reactive energy field, driven by the actual playback.
-- **Self-updating** — the app checks GitHub Releases and updates itself when you approve.
+- **Updates** — download new installers from GitHub Releases.
 
-## Speed — measured, not promised
+## Measured performance
 
-Generation speed vs. audio length ("3× realtime" = a 6-second clip takes ~2 seconds):
+The downloaded v3 release app was tested on an **M1 Max with 64 GB RAM, macOS 26.5**.
+External networking was blocked and the installed resources were write-protected.
 
-| Hardware | Path | Speed |
+| Workload | Generation time | Audio duration |
 |---|---|---|
-| Apple M1 Max | Metal | **~3.3× realtime** |
-| NVIDIA RTX 5060 Ti (Linux) | Vulkan | **~5× realtime** |
-| Modern desktop x86 CPU (no GPU at all) | CPU | **~1× realtime** |
-| Snapdragon X (native ARM64 measurement) | CPU | **~2.9× realtime** |
+| Short clip, warm repeat | 3.10 seconds | 5.36 seconds |
+| Longer passage, two joined chunks | 20.31 seconds | 42.63 seconds |
 
-## The absolute minimum (a.k.a. the worst hardware that works)
+The native server reported **Metal**. Initial load and warmup took 27.65 seconds; a restart took
+4.12 seconds. An earlier run of the same native runtime measured a peak sum of engine and native-server RSS of 3.40 GiB. This does not
+measure all GPU memory and is not a minimum-RAM requirement. Other devices will have different
+timings.
 
-No GPU required. The model is small enough (553 M parameters, 4-bit) that a CPU can carry it:
+The downloaded Linux DEB engine was also tested on a **Radeon 8060S** using Vulkan, through
+its packaged launcher with external networking blocked. A warm short request took **1.23
+seconds for 5.04 seconds of audio**; the two-chunk passage took **10.29 seconds for 43.99
+seconds of audio**. Full-reference loading, repeat generation, history preservation, restart
+and clean shutdown passed. The AppImage was built and its library layout checked separately;
+these GPU timings come from the DEB payload.
 
-- **CPU:** any x86-64 with **AVX2** — that's roughly **2013 (Intel Haswell / AMD Excavator) or
-  newer**. A ten-year-old office laptop qualifies.
-- **RAM:** ~2 GB free while generating (a 4 GB machine is a workable floor).
-- **Disk:** ~1 GB (app ≈ 200 MB + models ≈ 740 MB).
-- **What that feels like:** on a modern CPU, about realtime. On decade-old silicon expect a clip to
-  take ~2–4× its duration — a 10-second line lands in 20–40 seconds. Slow, but it works, and the
-  output is *identical* to what a GPU produces (deterministic decoding).
+Installed Linux and Windows x64 packages pass offline CPU synthesis in CI. The Linux runner
+took 18.98 seconds for 5.12 seconds of audio, and 101.02 seconds for the 41.75-second passage.
+The Windows runner took 44.30 seconds for 5.20 seconds of audio, and 219.31 seconds for the
+40.71-second passage. Hosted CPU timings vary; they do not describe GPU performance.
+Windows GPU performance has not been measured.
 
-Not supported: Intel Macs, 32-bit anything, pre-AVX2 CPUs, and **Windows-on-ARM running the x64
-build under emulation** — emulation subtly breaks the numerics and you get silence instead of
-speech. (A native Windows ARM64 build is on the roadmap; already measured at ~2.9× realtime on a
-Snapdragon X laptop.)
+The Windows and Linux x64 builds require an AVX2-capable CPU with FMA, F16C and BMI2 support.
+The release build logs confirm these instruction-set targets; older x64 CPUs are not qualified.
 
 ## How it works
 
 ```
-your text ─→ phonemes (espeak-ng, en-GB) ─→ speech codes (0.5B LLM, llama.cpp, greedy)
-          ─→ waveform (NeuCodec int8 ONNX decoder, always CPU) ─→ 24 kHz WAV
+your text ─→ Qwen3-TTS 0.6B Base + Roo2 Full Clone reference ─→ native tts-server
+          ─→ 24 kHz WAV
 ```
 
-The voice model is a single-voice identity-locked fine-tune of
-[NeuTTS-Air](https://huggingface.co/neuphonic/neutts-air) — the fine-tune *is* the voice; there is
-no voice cloning, no reference audio, and no way to make it sound like anyone else. Weights:
-[abliter8-ai/Roo-Voice-NeuTTS-GGUF](https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS-GGUF).
+The voice is the fixed Roo2 Full Clone reference: bundled speaker values, all 16 codebooks, and
+the reference transcript are required together. A partial reference is an installation error.
+The Q8 model files are from [Qwen3-TTS-GGUF](https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF).
 
-Everything is served from a local engine on a loopback port the app manages for you. The only
-network traffic is the one-time model download (Hugging Face), the update check (GitHub), and
-nothing else — your text and audio never leave the machine.
+Everything is served from a local engine on a loopback port the app manages for you. Remote access
+is not required for model loading or first synthesis; your text and audio never leave the machine.
 
 ## Troubleshooting
 
-- The status pill under the visualizer tells the truth: `downloading` (with honest byte counts) →
-  `loading` → `warming` → `ready`. First launch spends a while in `downloading`; that's the 740 MB.
-- `warming` exists so your **first generation is fast** — the app pre-compiles the GPU pipelines at
-  startup instead of during your first request.
+- The status pill under the visualizer tells the truth: `loading` → `warming` → `ready`.
+- During `warming`, the app runs a short synthesis to prepare the compute pipelines before
+  accepting your first request. Keep the app open to reuse the loaded model for later clips.
 - If the pill says `failed`, the message beside it is the actual reason. File it in
   [Issues](https://github.com/abliter8-ai/roo-voice-tts/issues) together with your OS and hardware.
 
 ## Building from source
 
 ```bash
-# engine (frozen sidecar): phonemizer + onnxruntime + llama-server
+# engine (frozen sidecar and native Qwen runtime)
 app/engine/freeze/build-macos.sh        # or build-linux.sh / build-windows.ps1
 # app shell + UI
 cd app && npm ci && npm run tauri build
 ```
 
 CI builds all three platforms from `.github/workflows/build-v2.yml`; releases are cut from tags.
+Supported targets are macOS 14+ Apple Silicon with Metal, Windows x64 and Linux x64 with Vulkan
+backends plus CPU fallback. Linux needs the Vulkan loader (`libvulkan1`) and OpenMP
+runtime (`libgomp1`), plus Tauri's GTK/WebKit libraries. The Debian package declares these
+dependencies. Vulkan acceleration also needs a compatible installed GPU driver.
 
 ## Component licenses
 
-The voice model is Apache-2.0 (as is its base, NeuTTS-Air). Bundled components:
-[llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT),
-[NeuCodec](https://huggingface.co/neuphonic/neucodec) (Apache-2.0),
-[espeak-ng](https://github.com/espeak-ng/espeak-ng) + phonemizer (**GPL-3.0**), onnxruntime (MIT),
-Tauri (MIT/Apache-2.0).
+The bundled Qwen3-TTS and native runtime carry their upstream licenses. Tauri is MIT/Apache-2.0.
 
 ---
 
-<sub>Looking for the v1.x app (MOSS-TTS, Python launcher)? It still exists —
-[v1.1.1](https://github.com/abliter8-ai/roo-voice-tts/releases/tag/v1.1.1) — but v2 replaces it:
-one app instead of installer+browser, a 740 MB model instead of 9.6 GB, and roughly 10× faster
-generation.</sub>
+<sub>Existing v2 installations retain their history and settings. v3 replaces the old NeuTTS
+download path with bundled Qwen3-TTS and the complete Roo2 Full Clone reference.</sub>

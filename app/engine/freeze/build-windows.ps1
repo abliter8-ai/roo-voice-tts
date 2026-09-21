@@ -1,66 +1,72 @@
-# IP-178 — freeze roo-engine (Windows x64) into a self-contained onedir bundle.
-# DRAFT: authored on macOS, validated on CI / design8-snap2 (emulated x64) —
-# treat first run as a test, not a given.
-#
-# Output: app\engine\dist\roo-engine\
-#   roo-engine.exe + _internal\        frozen python + onnxruntime + phonemizer
-#   espeak-ng.dll + espeak-ng-data\    from the official espeak-ng MSI (admin-extract)
-#   llama-server.exe + *.dll           official ggml-org win-vulkan-x64 build
-#                                      (Vulkan covers NVIDIA/AMD/Intel; no 370MB cudart)
+# IP-322 — freeze roo-engine and pinned qwentts native server (Windows x64).
 $ErrorActionPreference = "Stop"
-
-$Here      = Split-Path -Parent $MyInvocation.MyCommand.Path   # app\engine\freeze
-$EngineDir = Split-Path -Parent $Here                          # app\engine
-$Venv      = if ($env:ROO_FREEZE_ENV) { $env:ROO_FREEZE_ENV } else { "$EngineDir\.freeze-venv" }
-$LlamaTag  = if ($env:LLAMA_TAG) { $env:LLAMA_TAG } else { "b10068" }
-$EspeakVer = if ($env:ESPEAK_VER) { $env:ESPEAK_VER } else { "1.52.0" }
-$Out       = "$EngineDir\dist\roo-engine"
-
-Write-Host "== [1/4] freeze venv =="
-if (-not (Test-Path "$Venv\Scripts\python.exe")) {
+$Here = Split-Path -Parent $MyInvocation.MyCommand.Path; $EngineDir = Split-Path -Parent $Here
+$Venv = if ($env:ROO_FREEZE_ENV) { $env:ROO_FREEZE_ENV } else { "$EngineDir\.freeze-venv" }; $Out = "$EngineDir\dist\roo-engine"
+if (-not (Test-Path "$Venv\Scripts\pyinstaller.exe")) {
     python -m venv $Venv
-    & "$Venv\Scripts\pip" install --quiet phonemizer onnxruntime numpy pyinstaller
+    if ($LASTEXITCODE -ne 0) { throw "python venv creation failed: $LASTEXITCODE" }
+    & "$Venv\Scripts\pip.exe" install --quiet -r "$Here\requirements-freeze.txt"
+    if ($LASTEXITCODE -ne 0) { throw "freeze dependency install failed: $LASTEXITCODE" }
 }
-
-Write-Host "== [2/4] PyInstaller freeze =="
+Write-Host "== [1/3] PyInstaller freeze (NumPy only) =="
 Set-Location $EngineDir
-& "$Venv\Scripts\pyinstaller" --noconfirm --clean --onedir --name roo-engine `
-    --distpath dist --workpath build --specpath build `
-    --collect-data language_tags --collect-data csvw --collect-data segments `
-    --collect-data phonemizer `
-    --paths . freeze\freeze_entry.py
+& "$Venv\Scripts\pyinstaller.exe" --noconfirm --clean --onedir --name roo-engine --distpath dist --workpath build --specpath build --paths . freeze\freeze_entry.py
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed: $LASTEXITCODE" }
 if (-not (Test-Path "$Out\roo-engine.exe")) { throw "freeze produced no exe" }
-
-Write-Host "== [3/4] vendor espeak-ng $EspeakVer =="
-$Tmp = Join-Path $env:TEMP "espeak-extract"
-Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $Tmp | Out-Null
-$Msi = Join-Path $Tmp "espeak-ng.msi"
-Invoke-WebRequest -Uri "https://github.com/espeak-ng/espeak-ng/releases/download/$EspeakVer/espeak-ng.msi" -OutFile $Msi
-Start-Process msiexec -ArgumentList "/a `"$Msi`" /qn TARGETDIR=`"$Tmp\x`"" -Wait
-$EspeakDll = Get-ChildItem -Recurse -Path "$Tmp\x" -File |
-    Where-Object { $_.Name -in @("espeak-ng.dll", "libespeak-ng.dll") } |
-    Select-Object -First 1
-if (-not $EspeakDll) {
-    Write-Host "--- MSI extract tree (first 40 entries, for diagnosis) ---"
-    Get-ChildItem -Recurse -Path "$Tmp\x" | Select-Object -First 40 -ExpandProperty FullName
-    throw "espeak dll not found in MSI extract"
+Write-Host "== [2/3] native qwentts (Vulkan + portable CPU fallback) =="
+bash "$Here/build-native.sh" windows "$Out"
+if ($LASTEXITCODE -ne 0) { throw "native qwentts build failed: $LASTEXITCODE" }
+if (-not (Test-Path "$Out\tts-server.exe")) { throw "native server was not packaged" }
+Write-Host "== verify native DLL closure =="
+$dumpbin = Get-Command dumpbin.exe -ErrorAction Stop
+$runtimePattern = '(?im)^\s*((?:concrt|msvcp|vcruntime|vcomp)\d*(?:_\d+)?\.dll)\s*$'
+if (-not $env:VCToolsRedistDir) { throw "VCToolsRedistDir was not exported by vcvars64" }
+$x64Redist = Join-Path $env:VCToolsRedistDir 'x64'
+if (-not (Test-Path $x64Redist)) { throw "x64 MSVC redist root not found: $x64Redist" }
+$crtRoots = @(Get-ChildItem -Path $x64Redist -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue)
+if ($crtRoots.Count -ne 1) { throw "expected exactly one x64 MSVC CRT redist, found $($crtRoots.Count) under $x64Redist" }
+$crtRoot = $crtRoots[0].FullName
+$crtFamily = $crtRoots[0].Name -replace '\.CRT$', ''
+$openMpRoots = @(Get-ChildItem -Path $x64Redist -Directory -Filter "$crtFamily.OpenMP" -ErrorAction SilentlyContinue)
+if ($openMpRoots.Count -gt 1) { throw "ambiguous x64 MSVC OpenMP redist for $crtFamily" }
+$redistRoots = @($crtRoot)
+if ($openMpRoots.Count -eq 1) { $redistRoots += $openMpRoots[0].FullName }
+Write-Host "x64 MSVC CRT redist: $crtRoot"
+if ($openMpRoots.Count -eq 1) { Write-Host "x64 MSVC OpenMP redist: $($openMpRoots[0].FullName)" }
+function Find-X64Runtime([string] $name) {
+    foreach ($root in $redistRoots) {
+        $candidate = Get-ChildItem -Path $root -File -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($candidate) { return $candidate }
+    }
+    return $null
 }
-Copy-Item $EspeakDll.FullName "$Out\$($EspeakDll.Name)"
-$Data = Get-ChildItem -Recurse -Path "$Tmp\x" -Directory |
-    Where-Object { $_.Name -eq "espeak-ng-data" } | Select-Object -First 1
-if (-not $Data) { throw "espeak-ng-data not found in MSI extract" }
-Copy-Item -Recurse $Data.FullName "$Out\espeak-ng-data"
-
-Write-Host "== [4/4] official llama-server (win-vulkan-x64) =="
-$Zip = Join-Path $Tmp "llama.zip"
-Invoke-WebRequest -Uri "https://github.com/ggml-org/llama.cpp/releases/download/$LlamaTag/llama-$LlamaTag-bin-win-vulkan-x64.zip" -OutFile $Zip
-Expand-Archive -Path $Zip -DestinationPath "$Tmp\llama" -Force
-$Srv = Get-ChildItem -Recurse -Path "$Tmp\llama" -Filter "llama-server.exe" | Select-Object -First 1
-Copy-Item "$($Srv.DirectoryName)\*.exe" $Out
-Copy-Item "$($Srv.DirectoryName)\*.dll" $Out
-
-if (Test-Path "$Here\manifest.json") { Copy-Item "$Here\manifest.json" "$Out\manifest.json" }
-
-& "$Out\roo-engine.exe" --phonemize "The quick brown fox."
-Write-Host "OK: $Out"
+$pending = [System.Collections.Generic.Queue[string]]::new()
+$pending.Enqueue((Join-Path $Out 'tts-server.exe'))
+$seen = @{}
+while ($pending.Count -gt 0) {
+    $binary = $pending.Dequeue()
+    if ($seen.ContainsKey($binary)) { continue }
+    $seen[$binary] = $true
+    $depText = (& $dumpbin.Source /DEPENDENTS $binary | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "dumpbin dependency inspection failed for $binary`: $LASTEXITCODE" }
+    $runtimeNames = [regex]::Matches($depText, $runtimePattern) |
+        ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    foreach ($name in $runtimeNames) {
+        $destination = Join-Path $Out $name
+        if (-not (Test-Path $destination)) {
+            $candidate = Find-X64Runtime $name
+            if (-not $candidate) { throw "x64 native dependency not found: $name" }
+            Copy-Item $candidate.FullName $destination -Force
+            Write-Host "bundled x64 native runtime: $name"
+        }
+        $pending.Enqueue($destination)
+    }
+}
+Write-Host "== [3/3] bundled resources =="
+& "$Venv\Scripts\python.exe" "$Here\prepare-assets.py" --output "$Out"
+if ($LASTEXITCODE -ne 0) { throw "asset preparation failed: $LASTEXITCODE" }
+& "$Venv\Scripts\python.exe" "$Here\prepare-assets.py" --check --output "$Out"
+if ($LASTEXITCODE -ne 0) { throw "asset check failed: $LASTEXITCODE" }
+& "$Out\roo-engine.exe" --manifest "$Out\manifest.json" --native-bin "$Out\tts-server.exe" --data-dir "$EngineDir\dist\.smoke-data" --help | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "engine resource check failed: $LASTEXITCODE" }
+Write-Host "OK: $Out (Vulkan linked; portable CPU fallback)"

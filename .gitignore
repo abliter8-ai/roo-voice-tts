@@ -13,3 +13,11 @@ installers/windows/dist/
 installers/windows/_py-win.tar.gz
 installers/windows/_pyx/
 *.dmg
+
+# Native Qwen build inputs and bundled installer artifacts
+app/engine/freeze/qwentts-src/
+app/engine/build/
+app/engine/dist/
+app/engine/freeze/__pycache__/
+app/engine/evidence/
+*.gguf

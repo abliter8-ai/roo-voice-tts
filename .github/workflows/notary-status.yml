@@ -1,0 +1,39 @@
+name: notary-status
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/roo-voice-v3-qwen-bundled]
+    paths: [.github/workflows/notary-status.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  roo-voice-submissions:
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - name: Read recent Roo Voice notarization status
+        env:
+          ASC_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          ASC_KEY_ID: ${{ secrets.APPLE_API_KEY }}
+          ASC_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          umask 077
+          key="$RUNNER_TEMP/roo-notary-status.p8"
+          printf '%s' "$ASC_KEY_CONTENT" > "$key"
+          xcrun notarytool history --key "$key" --key-id "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER" --output-format json > "$RUNNER_TEMP/notary-history.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads((Path(os.environ['RUNNER_TEMP']) / 'notary-history.json').read_text())
+          rows = [{key: row.get(key) for key in ('id', 'name', 'createdDate', 'status')}
+                  for row in data.get('history', [])
+                  if 'roo' in row.get('name', '').lower()
+                  and row.get('createdDate', '') >= '2026-09-21T00:00:00Z']
+          print(json.dumps({'submissions': rows}, indent=2))
+          if not rows:
+              raise SystemExit('No Roo Voice submissions found for the release date')
+          PY

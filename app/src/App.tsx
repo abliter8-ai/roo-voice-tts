@@ -1,6 +1,6 @@
-/** Roo Voice v2 — app shell from the Claude Design kit (SidebarNav + titlebar
+/** Roo Voice v3 — app shell from the Claude Design kit (SidebarNav + titlebar
  * + Roo headshot underlay), wired to the real engine: live health in the
- * titlebar badge, real download progress strip, real history feeding the
+ * titlebar badge, real engine state, real history feeding the
  * screens. */
 import React from "react";
 import { SidebarNav, Badge, Button } from "./design/components";
@@ -63,7 +63,7 @@ export default function App() {
         <div style={{ fontFamily: "var(--font-display)", fontSize: 24, letterSpacing: ".03em", color: "var(--white)" }}>
           ROO<span style={{ color: "var(--roo-red)" }}>·</span>VOICE
         </div>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--text-muted)", letterSpacing: ".1em", marginTop: 3 }}>TTS v2.0</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--text-muted)", letterSpacing: ".1em", marginTop: 3 }}>TTS v3.0</div>
       </div>
     </div>
   );
@@ -105,12 +105,6 @@ export default function App() {
           </span>
           <div style={{ marginLeft: "auto" }}><HealthBadge health={health} /></div>
         </div>
-        {/* download progress strip (honest bytes — first launch) */}
-        {health.status === "downloading" && health.download?.total && (
-          <div style={{ height: 3, flexShrink: 0, background: "var(--n-800)", position: "relative", zIndex: 1 }}>
-            <div style={{ height: "100%", width: `${(100 * health.download.got) / health.download.total}%`, background: "var(--roo-red)", boxShadow: "var(--glow-red-sm)", transition: "width .3s" }} />
-          </div>
-        )}
         {/* screen */}
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", position: "relative", zIndex: 1 }}>
           {mode === "gen" && <GenerateScreen health={health} onGenerated={onGenerated} />}
@@ -146,16 +140,16 @@ function SettingsPanel({ health, onClose }: { health: HealthState; onClose: () =
         {row("App version", APP_VERSION)}
         {row("Engine version", health.version || "—")}
         {row("Model", health.model?.replace(/\.gguf$/, "") || "—")}
-        {row("Decoding", "Greedy · deterministic (temp 0)")}
+        {row("Decoding", "Native Qwen sampling")}
         {row("Output", "24 kHz mono WAV")}
 
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-muted)", margin: "18px 0 2px" }}>Privacy</div>
         <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55, margin: "6px 0" }}>
-          Everything runs on this device. Your text and audio never leave the machine — the only network use is the one-time model download and update checks.
+          Everything runs on this device. Your text and audio never leave the machine. Updates are separate from local speech generation.
         </p>
 
         <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-muted)", margin: "18px 0 8px" }}>Support</div>
-        <Button variant="secondary" fullWidth onClick={async () => { await saveDiagnostics(); setSaved(true); setTimeout(() => setSaved(false), 2500); }}>
+        <Button variant="secondary" fullWidth onClick={async () => { try { await saveDiagnostics(); setSaved(true); setTimeout(() => setSaved(false), 2500); } catch (e) { window.alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`); } }}>
           {saved ? "Report saved ✓" : "Save diagnostics report"}
         </Button>
         <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, margin: "8px 0 0" }}>
@@ -164,7 +158,7 @@ function SettingsPanel({ health, onClose }: { health: HealthState; onClose: () =
 
         <div style={{ marginTop: "auto", paddingTop: 20, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-disabled)", display: "flex", flexDirection: "column", gap: 6 }}>
           <a href="https://github.com/abliter8-ai/roo-voice-tts" target="_blank" rel="noreferrer">github.com/abliter8-ai/roo-voice-tts</a>
-          <a href="https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS" target="_blank" rel="noreferrer">Voice model card</a>
+          <a href="https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF" target="_blank" rel="noreferrer">Voice model card</a>
         </div>
       </div>
     </div>
@@ -172,12 +166,9 @@ function SettingsPanel({ health, onClose }: { health: HealthState; onClose: () =
 }
 
 function HealthBadge({ health }: { health: HealthState }) {
-  const gb = (n: number) => (n / 1024 ** 3).toFixed(1);
   switch (health.status) {
     case "ready":
       return <Badge variant="neutral" dot>Model loaded · {health.model?.replace(/\.gguf$/, "") || "GGUF"}</Badge>;
-    case "downloading":
-      return <Badge variant="red" dot>Downloading {health.download ? `${gb(health.download.got)} / ${gb(health.download.total)} GB` : "model"}</Badge>;
     case "failed":
       return <Badge variant="red">Engine failed — see Generate</Badge>;
     case "connecting":
