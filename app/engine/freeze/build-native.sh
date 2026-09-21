@@ -71,6 +71,8 @@ case "$TARGET" in
     fi
     [ -n "$VULKAN_DLL" ] || { echo "FATAL: Vulkan loader vulkan-1.dll is unavailable" >&2; exit 1; }
     cp "$VULKAN_DLL" "$OUT/vulkan-1.dll"
-    command -v dumpbin >/dev/null 2>&1 && dumpbin /DEPENDENTS "$OUT/tts-server.exe" | tee "$OUT/tts-server.links.txt" ;;
+    # PowerShell performs DLL inspection and copies the x64 runtime closure.
+    # Running dumpbin here would let MSYS rewrite /DEPENDENTS as a file path.
+    ;;
 esac
 echo "native backend packaged: $OUT"
