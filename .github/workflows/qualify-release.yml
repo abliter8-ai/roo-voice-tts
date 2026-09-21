@@ -51,8 +51,10 @@ jobs:
           $download = Join-Path $env:RUNNER_TEMP 'roo-release-download'
           New-Item -ItemType Directory -Force -Path $download | Out-Null
           $repo = '${{ github.repository }}'
-          $release = gh api "repos/$repo/releases/tags/v$version" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or -not $release.id) { throw "Release v$version is not readable through the workflow token" }
+          $releases = gh api "repos/$repo/releases?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Release listing failed' }
+          $release = @($releases | Where-Object { $_.tag_name -eq "v$version" })
+          if ($release.Count -ne 1) { throw "Expected one visible release for v$version; found $($release.Count)" }
           $assetName = "Roo.Voice_${version}_x64-setup.exe"
           $asset = @($release.assets | Where-Object { $_.name -eq $assetName })
           if ($asset.Count -ne 1) { throw "Expected one release asset named $assetName; found $($asset.Count)" }
