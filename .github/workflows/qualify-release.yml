@@ -9,7 +9,7 @@ on:
       - app/engine/freeze/offline-smoke.py
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows-installed:
@@ -49,9 +49,17 @@ jobs:
         run: |
           $version = (Get-Content app/src-tauri/tauri.conf.json | ConvertFrom-Json).version
           $download = Join-Path $env:RUNNER_TEMP 'roo-release-download'
-          gh release download "v$version" --repo '${{ github.repository }}' --pattern '*x64-setup.exe' --dir $download
-          if ($LASTEXITCODE -ne 0) { throw 'Release download failed' }
-          $installer = Get-ChildItem $download -Filter '*.exe' -File | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path $download | Out-Null
+          $repo = '${{ github.repository }}'
+          $release = gh api "repos/$repo/releases/tags/v$version" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $release.id) { throw "Release v$version is not readable through the workflow token" }
+          $assetName = "Roo.Voice_${version}_x64-setup.exe"
+          $asset = @($release.assets | Where-Object { $_.name -eq $assetName })
+          if ($asset.Count -ne 1) { throw "Expected one release asset named $assetName; found $($asset.Count)" }
+          $installerPath = Join-Path $download $assetName
+          Invoke-WebRequest -Uri $asset[0].url -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/octet-stream' } -OutFile $installerPath
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $installerPath)) { throw 'Release asset download failed' }
+          $installer = Get-Item $installerPath
           Get-FileHash $installer.FullName -Algorithm SHA256
           $dest = Join-Path $env:RUNNER_TEMP 'roo-release-installed'
           $process = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$dest") -Wait -PassThru
