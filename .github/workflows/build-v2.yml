@@ -183,6 +183,7 @@ jobs:
           APPLE_API_KEY_PATH: /tmp/asc-key.p8
         with:
           projectPath: app
+          args: ${{ startsWith(matrix.platform, 'ubuntu') && '--bundles deb,appimage' || '' }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Roo Voice {0}', github.ref_name) || '' }}
           releaseDraft: true
