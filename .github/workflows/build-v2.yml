@@ -93,6 +93,24 @@ jobs:
           if (-not (Test-Path "$sdk\Bin\glslc.exe")) { throw "Vulkan SDK glslc missing: $sdk" }
           "VULKAN_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Windows MSVC x64 build environment
+        if: startsWith(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs) { throw "x64 MSVC toolset not found" }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found: $vcvars" }
+          $dump = cmd.exe /d /s /c "`"$vcvars`" amd64 && set"
+          if ($LASTEXITCODE -ne 0) { throw "vcvars64.bat failed: $LASTEXITCODE" }
+          foreach ($line in $dump) {
+            if ($line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$' -and $Matches[1] -in @('Path', 'INCLUDE', 'LIB', 'LIBPATH', 'VCToolsInstallDir', 'VCToolsRedistDir', 'VCINSTALLDIR', 'VSINSTALLDIR', 'WindowsSdkDir', 'WindowsSDKVersion', 'UniversalCRTSdkDir', 'UCRTVersion')) {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+
       - name: Freeze roo-engine
         env:
           ROO_FREEZE_ENV: ${{ github.workspace }}/.freeze-venv
@@ -154,21 +172,23 @@ jobs:
           bash app/engine/freeze/presign-macos.sh app/engine/dist/roo-engine \
             "$APPLE_SIGNING_IDENTITY" app/src-tauri/entitlements.plist
           # signed engine must still RUN (Team-ID/library-validation interactions)
-      - name: Native Metal synthesis smoke after signing (macOS arm64)
+      # Standard hosted Macs expose Apple Paravirtual GPU without SIMD reduction;
+      # RMS_NORM is unsupported there. Qualify Metal on a physical release-test Mac.
+      - name: Native CPU synthesis smoke after signing (macOS arm64)
         if: startsWith(matrix.platform, 'macos')
         run: |
           python app/engine/freeze/offline-smoke.py \
             --engine app/engine/dist/roo-engine/roo-engine \
             --manifest app/engine/dist/roo-engine/manifest.json \
-            --output "$RUNNER_TEMP/roo-engine-metal-smoke" \
-            --backend MTL0
+            --output "$RUNNER_TEMP/roo-engine-macos-smoke" \
+            --backend CPU
 
-      - name: Upload macOS Metal smoke evidence
+      - name: Upload macOS CPU smoke evidence
         if: always() && startsWith(matrix.platform, 'macos')
         uses: actions/upload-artifact@v4
         with:
-          name: roo-voice-${{ matrix.platform }}-metal-smoke
-          path: ${{ runner.temp }}/roo-engine-metal-smoke
+          name: roo-voice-${{ matrix.platform }}-cpu-smoke
+          path: ${{ runner.temp }}/roo-engine-macos-smoke
           if-no-files-found: warn
 
       - name: Export updater signing key when configured

@@ -19,28 +19,42 @@ if ($LASTEXITCODE -ne 0) { throw "native qwentts build failed: $LASTEXITCODE" }
 if (-not (Test-Path "$Out\tts-server.exe")) { throw "native server was not packaged" }
 Write-Host "== verify native DLL closure =="
 $dumpbin = Get-Command dumpbin.exe -ErrorAction Stop
-$depText = (& $dumpbin.Source /DEPENDENTS "$Out\tts-server.exe" | Out-String)
-if ($LASTEXITCODE -ne 0) { throw "dumpbin dependency inspection failed: $LASTEXITCODE" }
-$runtimeNames = [regex]::Matches($depText, '(?im)^\s*((?:api-ms-win-crt-)[^\s]+\.dll|(?:msvcp|vcruntime|vcomp)\d*(?:_\d+)?\.dll)\s*$') |
-    ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+$runtimePattern = '(?im)^\s*((?:concrt|msvcp|vcruntime|vcomp)\d*(?:_\d+)?\.dll)\s*$'
 $redistRoots = @()
-if ($env:VCToolsRedistDir) { $redistRoots += $env:VCToolsRedistDir }
-if ($env:VCToolsInstallDir) { $redistRoots += (Join-Path $env:VCToolsInstallDir "Redist\MSVC") }
-foreach ($name in $runtimeNames) {
-    $candidate = $null
+if (-not $env:VCToolsRedistDir) { throw "VCToolsRedistDir was not exported by vcvars64" }
+$redistVersion = $env:VCToolsRedistDir
+$redistRoots += Join-Path $redistVersion "x64\Microsoft.VC143.CRT"
+$openMpRoot = Join-Path $redistVersion "x64\Microsoft.VC143.OpenMP"
+if (Test-Path $openMpRoot) { $redistRoots += $openMpRoot }
+if (-not (Test-Path $redistRoots[0])) { throw "x64 MSVC CRT redist directory not found: $($redistRoots[0])" }
+function Find-X64Runtime([string] $name) {
     foreach ($root in $redistRoots) {
-        if (Test-Path $root) {
-            $candidate = Get-ChildItem -Path $root -Recurse -File -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($candidate) { break }
+        $candidate = Get-ChildItem -Path $root -File -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($candidate) { return $candidate }
+    }
+    return $null
+}
+$pending = [System.Collections.Generic.Queue[string]]::new()
+$pending.Enqueue((Join-Path $Out 'tts-server.exe'))
+$seen = @{}
+while ($pending.Count -gt 0) {
+    $binary = $pending.Dequeue()
+    if ($seen.ContainsKey($binary)) { continue }
+    $seen[$binary] = $true
+    $depText = (& $dumpbin.Source /DEPENDENTS $binary | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "dumpbin dependency inspection failed for $binary`: $LASTEXITCODE" }
+    $runtimeNames = [regex]::Matches($depText, $runtimePattern) |
+        ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    foreach ($name in $runtimeNames) {
+        $destination = Join-Path $Out $name
+        if (-not (Test-Path $destination)) {
+            $candidate = Find-X64Runtime $name
+            if (-not $candidate) { throw "x64 native dependency not found: $name" }
+            Copy-Item $candidate.FullName $destination -Force
+            Write-Host "bundled x64 native runtime: $name"
         }
+        $pending.Enqueue($destination)
     }
-    if (-not $candidate) {
-        $systemCandidate = (where.exe $name 2>$null | Select-Object -First 1)
-        if ($systemCandidate) { $candidate = Get-Item $systemCandidate }
-    }
-    if (-not $candidate) { throw "native dependency not found: $name" }
-    Copy-Item $candidate.FullName "$Out\$name" -Force
-    Write-Host "bundled native runtime: $name"
 }
 Write-Host "== [3/3] bundled resources =="
 & "$Venv\Scripts\python.exe" "$Here\prepare-assets.py" --output "$Out"
