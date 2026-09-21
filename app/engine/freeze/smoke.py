@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -92,6 +93,9 @@ def main():
                 code, body, _ = request("/healthz")
                 state = json.loads(body)
                 if state["status"] == "failed":
+                    evidence["failure"] = state
+                    evidence["diagnostics"] = json.loads(request("/diagnostics")[1])
+                    print(json.dumps(evidence["diagnostics"], indent=2), file=sys.stderr, flush=True)
                     raise RuntimeError(str(state))
                 if code == 200:
                     assert state["version"] == "3.0.0", state

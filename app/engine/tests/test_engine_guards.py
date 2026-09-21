@@ -42,7 +42,7 @@ class TestBundledAssets(unittest.TestCase):
                 json.dump({"schema": 3, "model": QWEN_MODEL, "mode": "full",
                            "assets": entries}, stream)
             resolved = resolve_assets(manifest, "/tmp/tts-server")
-            self.assertEqual(resolved["talker"], os.path.join(root, names["talker"]))
+            self.assertEqual(resolved["talker"], os.path.normpath(os.path.join(root, names["talker"])))
             self.assertEqual(resolved["native_bin"], "/tmp/tts-server")
             with open(os.path.join(root, names["codec"]), "ab") as stream:
                 stream.write(b"corrupt")

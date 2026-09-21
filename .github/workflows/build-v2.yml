@@ -62,7 +62,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
-            librsvg2-dev patchelf libvulkan-dev libvulkan1 glslc
+            librsvg2-dev patchelf libvulkan-dev libvulkan1 xz-utils
+
+      - name: Linux Vulkan SDK (pinned LunarG glslc)
+        if: startsWith(matrix.platform, 'ubuntu')
+        shell: bash
+        run: |
+          version='1.4.357.0'
+          archive="$RUNNER_TEMP/vulkansdk-linux-x86_64-$version.tar.xz"
+          curl -fsSL --retry 2 \
+            "https://sdk.lunarg.com/sdk/download/$version/linux/vulkansdk-linux-x86_64-$version.tar.xz" \
+            -o "$archive"
+          echo '0f09bf6a0625e346bf004be70b92907e934a4c76606b323441b2baf3a5a0e66d  '"$archive" | sha256sum -c -
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          sdk="$RUNNER_TEMP/$version/x86_64"
+          test -x "$sdk/bin/glslc"
+          echo "VULKAN_SDK=$sdk" >> "$GITHUB_ENV"
+          echo "$sdk/bin" >> "$GITHUB_PATH"
 
       - name: Windows Vulkan SDK (pinned LunarG release)
         if: startsWith(matrix.platform, 'windows')
@@ -99,12 +115,12 @@ jobs:
             --backend CPU
 
       - name: Upload native smoke evidence
-        if: startsWith(matrix.platform, 'ubuntu') || startsWith(matrix.platform, 'windows')
+        if: always() && (startsWith(matrix.platform, 'ubuntu') || startsWith(matrix.platform, 'windows'))
         uses: actions/upload-artifact@v4
         with:
           name: roo-voice-${{ matrix.platform }}-native-smoke
           path: ${{ runner.temp }}/roo-engine-smoke
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: npm ci
         working-directory: app
@@ -148,12 +164,12 @@ jobs:
             --backend MTL0
 
       - name: Upload macOS Metal smoke evidence
-        if: startsWith(matrix.platform, 'macos')
+        if: always() && startsWith(matrix.platform, 'macos')
         uses: actions/upload-artifact@v4
         with:
           name: roo-voice-${{ matrix.platform }}-metal-smoke
           path: ${{ runner.temp }}/roo-engine-metal-smoke
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Export updater signing key when configured
         shell: bash
