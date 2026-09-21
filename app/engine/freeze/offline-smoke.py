@@ -44,6 +44,8 @@ def mac_profile(path: Path, resource_dir: Path | None = None) -> None:
         + readonly
         + '(allow network-outbound (remote tcp "localhost:*"))\n'
         + '(allow network-outbound (remote udp "localhost:*"))\n'
+        + '(allow network-bind (local tcp "localhost:*"))\n'
+        + '(allow network-bind (local udp "localhost:*"))\n'
         + '(allow network-inbound (local tcp "localhost:*"))\n'
         + '(allow network-inbound (local udp "localhost:*"))\n'
     )
