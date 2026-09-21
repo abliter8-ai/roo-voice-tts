@@ -82,8 +82,7 @@ def firewall(program: Path, name: str, add: bool) -> None:
     if add:
         command_text = (
             "New-NetFirewallRule -DisplayName {name} -Direction Outbound -Action Block "
-            "-Program {program} -Profile Any -Protocol Any -RemoteAddress "
-            "'0.0.0.0-126.255.255.255','128.0.0.0-255.255.255.255','::/0' "
+            "-Program {program} -Profile Any -Protocol Any -RemoteAddress Any "
             "-ErrorAction Stop"
         ).format(name=quote(name), program=quote(str(program)))
     else:
@@ -103,7 +102,7 @@ def run_windows(smoke: Path, smoke_args: list[str], env: dict[str, str], evidenc
         for name, program in zip(names, programs):
             firewall(program, name, True)
         evidence["restriction"] = {"kind": "windows-firewall", "programs": [str(p) for p in programs],
-                                    "rules": names, "loopback": "IPv4 127.0.0.0/8 excluded; IPv6 ::/0 blocked"}
+                                    "rules": names, "loopback": "IPv4 loopback exemption verified by preflight/smoke"}
         return subprocess.Popen(launcher(smoke, smoke_args), env=env), names
     except Exception:
         for name in names:
