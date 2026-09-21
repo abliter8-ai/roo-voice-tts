@@ -20,13 +20,19 @@ if (-not (Test-Path "$Out\tts-server.exe")) { throw "native server was not packa
 Write-Host "== verify native DLL closure =="
 $dumpbin = Get-Command dumpbin.exe -ErrorAction Stop
 $runtimePattern = '(?im)^\s*((?:concrt|msvcp|vcruntime|vcomp)\d*(?:_\d+)?\.dll)\s*$'
-$redistRoots = @()
 if (-not $env:VCToolsRedistDir) { throw "VCToolsRedistDir was not exported by vcvars64" }
-$redistVersion = $env:VCToolsRedistDir
-$redistRoots += Join-Path $redistVersion "x64\Microsoft.VC143.CRT"
-$openMpRoot = Join-Path $redistVersion "x64\Microsoft.VC143.OpenMP"
-if (Test-Path $openMpRoot) { $redistRoots += $openMpRoot }
-if (-not (Test-Path $redistRoots[0])) { throw "x64 MSVC CRT redist directory not found: $($redistRoots[0])" }
+$x64Redist = Join-Path $env:VCToolsRedistDir 'x64'
+if (-not (Test-Path $x64Redist)) { throw "x64 MSVC redist root not found: $x64Redist" }
+$crtRoots = @(Get-ChildItem -Path $x64Redist -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue)
+if ($crtRoots.Count -ne 1) { throw "expected exactly one x64 MSVC CRT redist, found $($crtRoots.Count) under $x64Redist" }
+$crtRoot = $crtRoots[0].FullName
+$crtFamily = $crtRoots[0].Name -replace '\.CRT$', ''
+$openMpRoots = @(Get-ChildItem -Path $x64Redist -Directory -Filter "$crtFamily.OpenMP" -ErrorAction SilentlyContinue)
+if ($openMpRoots.Count -gt 1) { throw "ambiguous x64 MSVC OpenMP redist for $crtFamily" }
+$redistRoots = @($crtRoot)
+if ($openMpRoots.Count -eq 1) { $redistRoots += $openMpRoots[0].FullName }
+Write-Host "x64 MSVC CRT redist: $crtRoot"
+if ($openMpRoots.Count -eq 1) { Write-Host "x64 MSVC OpenMP redist: $($openMpRoots[0].FullName)" }
 function Find-X64Runtime([string] $name) {
     foreach ($root in $redistRoots) {
         $candidate = Get-ChildItem -Path $root -File -Filter $name -ErrorAction SilentlyContinue | Select-Object -First 1
