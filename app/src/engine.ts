@@ -78,7 +78,7 @@ export async function fetchProgress(): Promise<{ phase: string; chunk: number; c
   return await r.json();
 }
 
-export const APP_VERSION = "2.0.0";
+export const APP_VERSION = "3.0.0";
 
 export async function fetchDiagnostics(): Promise<any> {
   return await (await fetch(`${base}/diagnostics`)).json();
@@ -87,7 +87,7 @@ export async function fetchDiagnostics(): Promise<any> {
 export async function saveDiagnostics(): Promise<void> {
   const d = await fetchDiagnostics();
   const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
-  saveBlobAs(blob, `roo-voice-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`);
+  await saveBlobAs(blob, `roo-voice-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`);
 }
 
 export async function listHistory(): Promise<HistEntry[]> {
@@ -141,16 +141,22 @@ export async function getPeaks(id: string, bars: number): Promise<number[]> {
   return norm;
 }
 
-export function saveBlobAs(blob: Blob, name: string): void {
+export async function saveBlobAs(blob: Blob, name: string): Promise<void> {
+  const tauri = (window as any).__TAURI__;
+  if (tauri) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_export", { name, bytes: Array.from(new Uint8Array(await blob.arrayBuffer())) });
+    return;
+  }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
-  URL.revokeObjectURL(a.href);
+  window.setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 export async function saveClip(id: string, name: string): Promise<void> {
-  saveBlobAs(await (await fetch(wavUrl(id))).blob(), name);
+  await saveBlobAs(await (await fetch(wavUrl(id))).blob(), name);
 }
 
 /* ---------------- shared player ---------------- */

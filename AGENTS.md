@@ -1,27 +1,27 @@
 # AGENTS.md — guide for coding agents
 
 You are a coding agent working on **Roo Voice** — a local, single-voice text-to-speech desktop app.
-As of **v2.0.0** this is a **native app** (Tauri), not a clone-and-run script. Two audiences below:
+As of **v3.0.0** this is a **native app** (Tauri), not a clone-and-run script. Two audiences below:
 helping a **user** install it, or working on the **codebase**. Don't change the locked voice contract
 (§ Do NOT).
 
-## What this repo is (v2)
+## What this repo is (v3)
 
 A cross-platform desktop app (macOS / Windows / Linux) that runs one fixed voice ("Roo") entirely
 on-device. Architecture:
 
 ```
 Tauri shell (Rust) ── supervises ──► roo-engine sidecar (one frozen binary, no venv)
-  window · tray · updater · model download        phonemize(espeak-ng, en-GB)
-  · sidecar lifecycle · signing                   → speech codes (llama.cpp, GGUF, GREEDY)
-        │ loopback HTTP                            → waveform (NeuCodec int8 ONNX, CPU)
+  window · tray · updater · bundled models        Qwen3-TTS native tts-server
+  · sidecar lifecycle · signing                   → Roo2 Full Clone conditioning
+        │ loopback HTTP                            → 24 kHz WAV
   WebView UI (React): Generate · Listen · Studio   → 24 kHz WAV  ·  /v1/audio/speech + /healthz
   (compose/join) · live visualizer · Settings
 ```
 
-The voice model downloads on first run per `app/engine/freeze/manifest.json` (HF URL + **sha256**);
-it is not bundled. Everything is on a loopback port the shell manages. The only network traffic is
-the one-time model download (Hugging Face) and the update check (GitHub).
+Qwen3-TTS and the complete Roo2 Full Clone reference are bundled per `app/engine/freeze/manifest.json`
+(relative paths + **sha256**). Missing or corrupt assets fail clearly; old user models are never
+selected and no model download fallback exists. Everything is on a loopback port the shell manages.
 
 **v1 (MOSS-TTS, Python launcher + browser) is retired** but kept in-repo for reference
 (`installers/`, `server/`, `web/`, `start.sh`) and as release `v1.1.1`. Do not send users there.
@@ -30,19 +30,19 @@ the one-time model download (Hugging Face) and the update check (GitHub).
 
 There is no build step for users — point them at a signed installer:
 
-- **GitHub Releases** (Latest = v2.1.0): <https://github.com/abliter8-ai/roo-voice-tts/releases/latest>
-- **Direct mirror**: `https://appinstall.ruinpilot.plus/roo-voice-{macos,winx64,linux}-v2_1_0.{dmg,exe,AppImage}`
+- **GitHub Releases** (Latest = v3.0.0): <https://github.com/abliter8-ai/roo-voice-tts/releases/latest>
+- Release mirrors are published with the measured v3.0.0 installer names.
 
 | Platform | File | Notes |
 |---|---|---|
 | macOS 14+ (Apple Silicon) | `…_aarch64.dmg` | signed & notarized; Metal |
 | Windows 10/11 (x64) | `…_x64-setup.exe` / `.msi` | GPU via Vulkan, CPU fallback |
-| Linux x64 (glibc 2.35+) | `.AppImage` (self-updating) / `.deb` / `.rpm` | GPU via Vulkan, CPU fallback |
+| Linux x64 (glibc 2.35+) | `.AppImage` / `.deb` / `.rpm` | GPU via Vulkan candidate, CPU fallback |
 
-First launch downloads the voice model (~740 MB, resumable, checksum-verified); later launches take
-seconds. **No GPU required** — a modern x86-64 CPU with **AVX2** (≈2013+) runs it at ~real-time;
-~2 GB free RAM. Not supported: Intel Macs, native Windows-ARM64 (the x64 build under emulation
-produces silence — numerics diverge), pre-AVX2 CPUs.
+The installer bundles Qwen3-TTS 0.6B Base, all Roo2 Full Clone reference components, and the native
+runtime. No model download or Python install is required. Supported targets are macOS 14+ Apple
+Silicon, Windows x64, and Linux x64; GPU paths and CPU fallback require measured qualification.
+Native Windows ARM64 and Intel macOS are outside this release.
 
 ## Working on the CODEBASE
 
@@ -56,14 +56,17 @@ produces silence — numerics diverge), pre-AVX2 CPUs.
   - `app/engine/freeze/` — PyInstaller freeze per OS (`build-macos.sh` / `build-linux.sh` /
     `build-windows.ps1`), `presign-macos.sh`, and `manifest.json` (the model pin).
 - **Build locally**: `app/engine/freeze/build-<os>.sh` then `cd app && npm ci && npm run tauri build`.
-  The freeze bundles espeak-ng + the NeuCodec ONNX decoder + a prebuilt `llama-server`; the engine
+  The freeze bundles the native Qwen runtime, Q8 model assets, and Roo2 reference files; the engine
   is a single binary — no runtime pip/venv.
+- **Checks from the repo root**: `python3 -m unittest discover -s app/engine/tests -v` and
+  `npm --prefix app run build`. After freezing, run
+  `python3 app/engine/freeze/offline-smoke.py --engine app/engine/dist/roo-engine/roo-engine --manifest app/engine/dist/roo-engine/manifest.json --output /tmp/roo-v3-smoke --backend MTL0`
+  on macOS; use `CPU` and the `.exe` engine on Windows. Choose a fresh output directory each run.
 - **CI**: `.github/workflows/build-v2.yml` builds all three OSes on tag push, signs/notarizes macOS
   (incl. DMG staple), emits the updater `latest.json`, and creates a draft release. Public repo →
   free runners.
-- **The model contract is locked** (from IP-177): **GREEDY** (temperature 0, top_k 1), espeak-ng
-  **en-GB** phonemes with `preserve_punctuation, with_stress` — this MUST match training byte-for-byte
-  (a parity gate enforces it), **reference-free** single voice, NeuCodec 24 kHz decode.
+- **The v3 voice contract is fixed** Qwen3-TTS 0.6B Base plus all Roo2 Full Clone reference
+  components: speaker values, 16 codebooks, and transcript. All components are mandatory and bundled.
 
 ## Troubleshooting
 
@@ -73,44 +76,23 @@ report** (a redacted JSON: platform, versions, model, timings, last error), or
 (`~/Library/Application Support/ai.abliter8.roo-voice/` on macOS,
 `%APPDATA%\ai.abliter8.roo-voice\` on Windows).
 
-- The status pill tells the truth: `downloading` (honest bytes) → `loading` → `warming` → `ready`.
-  First launch spends a while in `downloading` (~740 MB). `warming` pre-compiles GPU pipelines so the
-  **first** generation is fast (a full-sentence warm-up, since cold Vulkan prefill was ~13 tok/s vs
-  ~18k warm).
-- **Garbled / rambling / pseudo-foreign gibberish mid-clip** — historically caused by the chunker
-  fragmenting short input into out-of-distribution pieces (the model was trained on whole utterances;
-  a 2-word prompt makes it ramble to fill space). Fixed in v2.0.0 by merging sentences
-  (`split_text`); if it recurs, that's the place to look — never emit tiny chunks.
-- **Wrong reading of dates / numbers / IDs** (v2.1.0) — `roo_engine/normalize.py` rewrites the
-  structure espeak mangles (ISO dates, hyphenated ranges/IDs, currency order, broken abbreviations)
-  and leaves digits for espeak to read. **It performs no number-to-word conversion, deliberately**:
-  espeak's en-GB front-end already reads integers, decimals, ordinals, percentages and clock times
-  correctly, and reimplementing those only replaces a correct reading with a buggy one. Before
-  adding a rule, measure the failure through the **library** phonemizer (`Phonemizer()`), not the
-  espeak CLI — they disagree, and the library is what the engine runs (that difference is why
-  `09:45` needed a rule at all). Rules are covered by `app/engine/tests/`.
-- **Clip ends mid-sentence / last words missing** (fixed v2.1.0) — a generation that stops on the
-  1024-code budget rather than `<|SPEECH_GENERATION_END|>` did not finish. `split_text` caps chunks
-  by CHARACTERS but the budget is TIME, so slow content (spelled digits, long numbers) overran it
-  and the tail was silently dropped. `Engine._audio_for` now re-splits any capped span so each
-  piece gets its own budget. Guard activity is reported in `/diagnostics` as `guard_events` — a
-  `dropped` entry is the one case where output is knowingly incomplete.
-- **"App can't be opened" on macOS** — the DMG is notarized+stapled as of v2.0.0; if a hand-built DMG
-  isn't, staple it (`xcrun stapler staple`) or the app inside will still launch (it's separately
-  notarized).
+- The status pill reports `loading` → `warming` → `ready`. A full-sentence warmup prepares
+  the runtime before the first user request. Measure Qwen timings on the packaged target.
+- **Generation failure** — use the diagnostic error and packaged asset manifest first. A missing or
+  corrupt model/reference asset must be reported as an initialization error.
+- **"App can't be opened" on macOS** — validate signing, notarization, and stapling on the release
+  artifact; local unsigned builds are not release evidence.
 
 ## Do NOT
 
-- Don't change the decoding contract: **greedy temp 0**, **en-GB** phonemes, **reference-free**. The
-  model was trained for exactly this; changing any of it breaks the voice or the phoneme-parity gate.
+- Don't remove any Roo2 Full Clone reference component or add a model download fallback. Missing
+  packaged assets must be a readable initialization error.
 - Don't re-introduce aggressive per-sentence chunking — merge short sentences (§ Troubleshooting).
-- Don't add `torch`/transformers to the engine — inference is **llama.cpp** (GGUF) now, decode is
-  onnxruntime. The engine ships as a frozen binary; keep it venv-free.
-- Don't try to make it multi-speaker or reference-conditioned — it is a fixed single voice.
+- Don't add `torch`/transformers or a user-side environment. The native Qwen runtime ships inside
+  the frozen application; keep it venv-free.
+- Don't make it multi-speaker or add a model selector — it is a fixed Roo2 voice.
 - Don't point users at the v1 launcher (`start.sh` / `server/`) — it's retired.
 
 ## Reference
 
-- Model: <https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS> (+ `-GGUF` for the quants).
-- Base: [NeuTTS-Air](https://huggingface.co/neuphonic/neutts-air) · decoder
-  [NeuCodec](https://huggingface.co/neuphonic/neucodec).
+- Model: <https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF> (Q8 Base and 12 Hz tokenizer).

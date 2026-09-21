@@ -53,7 +53,11 @@ export function StudioScreen({ clips }: { clips: HistEntry[] }) {
 
   const exportWav = async () => {
     if (!composer.items.length) return;
-    saveBlobAs(await composer.renderWav(), `roo-voice-studio-${new Date().toISOString().slice(0, 10)}.wav`);
+    try {
+      await saveBlobAs(await composer.renderWav(), `roo-voice-studio-${new Date().toISOString().slice(0, 10)}.wav`);
+    } catch (e) {
+      window.alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   const total = composer.totalSeconds();

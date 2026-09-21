@@ -1,10 +1,7 @@
 # Fast logic gate for the engine sidecar.
 #
-# build-v2.yml only runs on tag pushes and the v2-tauri-app branch, so pull
-# requests reached review with nothing verified — that is how a normalizer that
-# crashed on 13-digit numbers got as far as a PR. This job is seconds long and
-# runs on every PR and push: no model, no llama-server, no espeak, no Tauri
-# build, just the normalizer and code-budget guard logic.
+# Qwen adapter, bundled-asset and lifecycle tests do not load model weights.
+# Actual packaged speech is checked separately by build-v2.yml.
 name: engine-tests
 
 on:

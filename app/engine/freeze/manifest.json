@@ -1,10 +1,38 @@
 {
-  "gguf": {
-    "url": "https://huggingface.co/abliter8-ai/Roo-Voice-NeuTTS-GGUF/resolve/main/roo-neutts-q4_k_m.gguf",
-    "sha256": "c6f55fc54b119688295080856a9a4a8ad7827254df6619e02697e98d438cbb75"
-  },
-  "onnx": {
-    "url": "https://huggingface.co/neuphonic/neucodec-onnx-decoder-int8/resolve/main/model.onnx",
-    "sha256": "3ddd9e56396e6029e0e948ac0255c89c803f981f23dcf4c154f50820bd74a6b3"
+  "schema": 3,
+  "model": "Qwen3-TTS-12Hz-0.6B-Base",
+  "voice": "Roo2",
+  "mode": "full",
+  "sample_rate": 24000,
+  "runtime_commit": "0bfb9237c1aae55f6d279fc7e32b3416a6dbb93a",
+  "model_revision": "b7ee2e8c7459c3bea99da23e3d178125a7d1713c",
+  "assets": {
+    "talker": {
+      "path": "models/qwen-talker-0.6b-base-Q8_0.gguf",
+      "bytes": 992615488,
+      "sha256": "d54dbaf10591421fa764ed630d764efa717ae40cd959bd48c66d4eb1af226426",
+      "url": "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-0.6b-base-Q8_0.gguf"
+    },
+    "codec": {
+      "path": "models/qwen-tokenizer-12hz-Q8_0.gguf",
+      "bytes": 291150624,
+      "sha256": "1883beeed99348fc35e23dd225e9082f93f6f8c109330a33d935baa8acdbfd94",
+      "url": "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-tokenizer-12hz-Q8_0.gguf"
+    },
+    "speaker": {
+      "path": "voice/roo2/reference.spk",
+      "bytes": 4096,
+      "sha256": "fe014b7a46120ba32ad65130cbb7aea2651edea6d9341392b261370e45625261"
+    },
+    "reference_codes": {
+      "path": "voice/roo2/reference.rvq",
+      "bytes": 6314,
+      "sha256": "faea5aef61759764a6c5aaf034fe68edb80a34e246c8500c17e26d1f5de80cd6"
+    },
+    "reference_text": {
+      "path": "voice/roo2/reference.txt",
+      "bytes": 350,
+      "sha256": "70451cc1f3cb55205a560ca078d7fe77955af8c8816b6562e45661e8f09369c1"
+    }
   }
 }

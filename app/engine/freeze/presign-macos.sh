@@ -24,7 +24,7 @@ while IFS= read -r -d '' f; do
   case "$(file -b "$f")" in
     Mach-O*)
       case "$f" in
-        */roo-engine|*/llama-server)
+        */roo-engine|*/tts-server)
           if [ -n "$ENT" ]; then sign --entitlements "$ENT" "$f"; else sign "$f"; fi
           ;;
         *) sign "$f" ;;

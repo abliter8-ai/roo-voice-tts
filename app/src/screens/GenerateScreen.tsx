@@ -1,9 +1,8 @@
 /** GenerateScreen — the design's compose view wired to the real engine.
  *
  * Deviation from the design kit (recorded in IP-179): the Speed/Pitch/
- * Intensity sliders are omitted — the shipped model is deterministic
- * (greedy, temp 0) and has no such parameters; dead controls would lie.
- * The Voice card shows the real model facts instead.
+ * Intensity sliders are omitted because the native Qwen runtime exposes no
+ * user-facing controls for them. The Voice card shows the real model facts.
  */
 import React from "react";
 import { Textarea, Input, Button, Card, Badge, Waveform } from "../design/components";
@@ -73,11 +72,11 @@ export function GenerateScreen({ health, onGenerated }: {
       <Card padding={22} style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, letterSpacing: "var(--tracking-label)", textTransform: "uppercase", color: "var(--text-muted)" }}>Voice</span>
-          <Badge variant="neutral">Roo · fine-tuned</Badge>
+          <Badge variant="neutral">Roo · Full Clone</Badge>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 28 }}>
           <VoiceFact label="Model" value={health.model?.replace(/\.gguf$/, "") || "—"} />
-          <VoiceFact label="Decoding" value="Greedy · deterministic" />
+          <VoiceFact label="Decoding" value="Native Qwen sampling" />
           <VoiceFact label="Output" value="24 kHz WAV" />
         </div>
       </Card>

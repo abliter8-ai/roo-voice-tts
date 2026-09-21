@@ -1,7 +1,7 @@
 """HTTP surface of roo-engine (loopback only).
 
-Starts serving IMMEDIATELY so the UI can watch model download / load progress
-(v1.1.1 lesson: the server must exist before it is ready — 503 while warming).
+Starts serving immediately so the UI can watch local asset verification and
+native model loading (503 while warming).
 
   GET  /healthz            {status: starting|downloading|loading|warming|ready|failed, ...}
   GET  /progress           generation progress for the visualizer
@@ -11,13 +11,11 @@ Starts serving IMMEDIATELY so the UI can watch model download / load progress
   DELETE /history/<id>     remove clip
   GET  /diagnostics        support bundle (no secrets; paths + versions + log tail)
 """
-import hashlib
 import json
 import os
 import platform
 import threading
 import time
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import __version__
@@ -38,40 +36,6 @@ def set_state(**kw):
 def get_state():
     with _STATE_LOCK:
         return dict(STATE)
-
-
-def download(url: str, dest: str, sha256: str = None, label: str = ""):
-    """Resumable download with HONEST byte progress in STATE (symlink-free sizing
-    and real bytes — the IP-176 '19.1 GB of 9 GB' lesson) + sha256 verification."""
-    tmp = dest + ".part"
-    got = os.path.getsize(tmp) if os.path.exists(tmp) else 0
-    req = urllib.request.Request(url)
-    if got:
-        req.add_header("Range", f"bytes={got}-")
-    with urllib.request.urlopen(req, timeout=60) as r:
-        total = got + int(r.headers.get("Content-Length", 0))
-        mode = "ab" if got and r.status == 206 else "wb"
-        if mode == "wb":
-            got = 0
-        with open(tmp, mode) as f:
-            while True:
-                block = r.read(1024 * 512)
-                if not block:
-                    break
-                f.write(block)
-                got += len(block)
-                set_state(status="downloading",
-                          download={"label": label, "got": got, "total": total})
-    if sha256:
-        h = hashlib.sha256()
-        with open(tmp, "rb") as f:
-            for block in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(block)
-        if h.hexdigest() != sha256:
-            os.remove(tmp)
-            raise EngineError(f"sha256 mismatch for {label}: got {h.hexdigest()}")
-    os.replace(tmp, dest)
-    set_state(download=None)
 
 
 class History:
@@ -213,11 +177,11 @@ def make_handler(app):
     return Handler
 
 
-def diagnostics_factory(data_dir: str, llama, app=None):
+def diagnostics_factory(data_dir: str, native, app=None):
     def diagnostics():
         log_tail = ""
         try:
-            with open(os.path.join(data_dir, "llama-server.log"), "rb") as f:
+            with open(os.path.join(data_dir, "tts-server.log"), "rb") as f:
                 f.seek(max(0, os.fstat(f.fileno()).st_size - 8192))
                 log_tail = f.read().decode(errors="replace")
         except OSError:
@@ -227,12 +191,9 @@ def diagnostics_factory(data_dir: str, llama, app=None):
             "platform": platform.platform(),
             "python": platform.python_version(),
             "data_dir": data_dir,
-            "llama_alive": bool(llama and llama.alive()),
-            "llama_log_tail": log_tail,
-            # Derail-guard activity: empty on a healthy run. A "dropped" entry
-            # means a span was replaced by silence rather than a sustained tone —
-            # the one case where output is knowingly incomplete, so it must be
-            # visible in a user's report and not just inferred from the audio.
+            "native_alive": bool(native and native.alive()),
+            "native_runtime": getattr(native, "runtime_commit", "unknown"),
+            "native_log_tail": log_tail,
             "guard_events": list(getattr(app.get("engine"), "guard_events", []))
                             if app else [],
         }
