@@ -76,16 +76,22 @@ def run_linux(smoke: Path, smoke_args: list[str], env: dict[str, str], evidence:
 
 
 def firewall(program: Path, name: str, add: bool) -> None:
-    action = "add" if add else "delete"
-    command = ["netsh", "advfirewall", "firewall", action, "rule", f"name={name}"]
+    def quote(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
     if add:
-        command += ["dir=out", "action=block", f"program={program}", "enable=yes", "profile=any",
-                    "protocol=any", "remoteip=0.0.0.0-126.255.255.255,128.0.0.0-255.255.255.255,"
-                    "0:0:0:0:0:0:0:0-0:ffff:ffff:ffff:ffff:ffff:ffff:ffff,"
-                    "::/0"]
+        command_text = (
+            "New-NetFirewallRule -DisplayName {name} -Direction Outbound -Action Block "
+            "-Program {program} -Profile Any -Protocol Any -RemoteAddress "
+            "'0.0.0.0-126.255.255.255','128.0.0.0-255.255.255.255','::/0' "
+            "-ErrorAction Stop"
+        ).format(name=quote(name), program=quote(str(program)))
+    else:
+        command_text = f"Remove-NetFirewallRule -DisplayName {quote(name)} -ErrorAction SilentlyContinue"
+    command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command_text]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "netsh failed")
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Windows firewall command failed")
 
 
 def run_windows(smoke: Path, smoke_args: list[str], env: dict[str, str], evidence: dict,
@@ -97,12 +103,11 @@ def run_windows(smoke: Path, smoke_args: list[str], env: dict[str, str], evidenc
         for name, program in zip(names, programs):
             firewall(program, name, True)
         evidence["restriction"] = {"kind": "windows-firewall", "programs": [str(p) for p in programs],
-                                    "rules": names, "loopback": "127.0.0.0/8 and ::1 excluded"}
+                                    "rules": names, "loopback": "IPv4 127.0.0.0/8 excluded; IPv6 ::/0 blocked"}
         return subprocess.Popen(launcher(smoke, smoke_args), env=env), names
     except Exception:
         for name in names:
-            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", f"name={name}"],
-                           capture_output=True)
+            firewall(Path(""), name, False)
         raise
 
 
@@ -151,8 +156,7 @@ def main() -> int:
         return 0
     finally:
         for name in names:
-            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", f"name={name}"],
-                           capture_output=True)
+            firewall(Path(""), name, False)
         (output / "offline-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n",
                                                        encoding="utf-8")
 
