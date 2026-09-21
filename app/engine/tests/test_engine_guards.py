@@ -75,6 +75,39 @@ class FakeNative(NativeTTSServer):
 
 
 class TestNativeAdapter(unittest.TestCase):
+    def test_native_child_uses_host_libraries_outside_frozen_linux_runtime(self):
+        cases = [
+            ("linux", True, {"LD_LIBRARY_PATH": "/bundle/_internal"}, None),
+            ("linux", True, {"LD_LIBRARY_PATH": "/bundle/_internal:/host/lib",
+                             "LD_LIBRARY_PATH_ORIG": "/host/lib"}, "/host/lib"),
+            ("linux", False, {"LD_LIBRARY_PATH": "/developer/lib"}, "/developer/lib"),
+            ("darwin", True, {"LD_LIBRARY_PATH": "/unchanged"}, "/unchanged"),
+        ]
+        for platform, frozen, library_env, expected in cases:
+            with self.subTest(platform=platform, frozen=frozen, library_env=library_env):
+                with tempfile.TemporaryDirectory() as root:
+                    binary = os.path.join(root, "tts-server")
+                    with open(binary, "wb") as stream:
+                        stream.write(b"fixture")
+                    native = NativeTTSServer(binary, "talker", "codec", "spk", "rvq", "txt",
+                                             os.path.join(root, "tts.log"))
+                    native._request = mock.Mock(return_value=(200, b"{}", {}))
+                    native.register_voice = mock.Mock()
+                    original = {**library_env, "GGML_BACKEND": "Vulkan0"}
+                    with mock.patch.dict(os.environ, original, clear=True), \
+                         mock.patch("sys.platform", platform), \
+                         mock.patch("sys.frozen", frozen, create=True), \
+                         mock.patch("roo_engine.engine.subprocess.Popen") as launch:
+                        launch.return_value.poll.return_value = None
+                        try:
+                            native.start()
+                            child_env = launch.call_args.kwargs.get("env", os.environ)
+                            self.assertEqual(child_env.get("LD_LIBRARY_PATH"), expected)
+                            self.assertEqual(child_env["GGML_BACKEND"], "Vulkan0")
+                            self.assertEqual(dict(os.environ), original)
+                        finally:
+                            native.stop()
+
     def test_registers_full_reference_and_synthesizes_expected_request(self):
         with tempfile.TemporaryDirectory() as root:
             paths = []

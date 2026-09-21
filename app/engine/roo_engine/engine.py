@@ -7,6 +7,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -183,8 +184,15 @@ class NativeTTSServer:
         self.port = pick_port()
         args = [self.bin_path, "--model", self.talker_path, "--codec", self.codec_path,
                 "--alias", QWEN_ALIAS, "--port", str(self.port), "--host", "127.0.0.1"]
+        env = os.environ.copy()
+        if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
+            # The system Vulkan driver needs host libraries, not PyInstaller's copies.
+            if "LD_LIBRARY_PATH_ORIG" in env:
+                env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
+            else:
+                env.pop("LD_LIBRARY_PATH", None)
         self._log = open(self.log_path, "ab")
-        self.proc = subprocess.Popen(args, stdout=self._log, stderr=self._log)
+        self.proc = subprocess.Popen(args, stdout=self._log, stderr=self._log, env=env)
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             if self.proc.poll() is not None:

@@ -1,5 +1,3 @@
-<p align="center"><img src="assets/app-v2.png" alt="Roo Voice v3" width="820"></p>
-
 # Roo Voice
 
 A desktop text-to-speech app for **one voice — Roo's**: that signature baritone with the estuary
@@ -16,9 +14,9 @@ works offline after installation; updates remain separate.
 
 | Platform | File | Notes |
 |---|---|---|
-| **macOS** (Apple Silicon, macOS 14+) | `Roo Voice_x.x.x_aarch64.dmg` | Signed & notarized. Runs on Metal |
-| **Windows 10/11** (x64) | `Roo Voice_x.x.x_x64-setup.exe` | GPU via Vulkan (NVIDIA / AMD / Intel), CPU fallback |
-| **Linux** (x64, Ubuntu 22.04+ / glibc 2.35+) | `.AppImage` or `.deb` | GPU via Vulkan candidate, CPU fallback |
+| **macOS** (Apple Silicon, macOS 14+) | `Roo.Voice_3.0.0_aarch64.dmg` | Signed & notarized. Runs on Metal |
+| **Windows 10/11** (x64) | `Roo.Voice_3.0.0_x64-setup.exe` | Vulkan runtime and CPU fallback; hardware coverage below |
+| **Linux** (x64, Ubuntu 22.04+ / glibc 2.35+) | `Roo.Voice_3.0.0_amd64.AppImage` or `.deb` | Vulkan runtime and CPU fallback |
 
 ⬇️ **[Latest release](https://github.com/abliter8-ai/roo-voice-tts/releases/latest)**
 
@@ -35,20 +33,29 @@ files. No first-run model download is required.
 - **Live visualizer** — an audio-reactive energy field, driven by the actual playback.
 - **Updates** — download new installers from GitHub Releases.
 
-## Speed — measured, not promised
+## Measured performance
 
-Generation speed will be reported from packaged release validation. Preliminary local measurements
-are not installer evidence and are intentionally omitted here:
+The downloaded v3 release app was tested on an **M1 Max with 64 GB RAM, macOS 26.5**.
+External networking was blocked and the installed resources were write-protected.
 
-| Hardware | Path | Speed |
+| Workload | Generation time | Audio duration |
 |---|---|---|
-| macOS 14+ Apple Silicon | Metal candidate | Qualification in progress |
-| Windows x64 / Linux x64 | Vulkan candidate | Qualification in progress |
-| Supported x64 systems | CPU fallback | Qualification in progress |
+| Short clip, warm repeat | 3.17 seconds | 5.36 seconds |
+| Longer passage, two joined chunks | 20.24 seconds | 42.63 seconds |
 
-The packaged runtime includes a CPU fallback. Final RAM, disk, CPU feature, and platform coverage
-requirements will be stated from release validation. Raw model assets are 1,283,766,112 bytes;
-the final installer size is still pending.
+The native server reported **Metal**. Initial load and warmup took 26.55 seconds; a restart took
+4.15 seconds. The sampled peak sum of engine and native-server RSS was 3.40 GiB. This does not
+measure all GPU memory and is not a minimum-RAM requirement. Other devices will have different
+timings.
+
+The installed Windows x64 release also passes offline CPU synthesis, full-reference loading,
+repeat generation, history preservation and restart. On the hosted CI runner, a warm request
+took 37.22 seconds for 5.20 seconds of audio; the longer passage took 199.34 seconds for 40.71
+seconds of audio. These CPU measurements do not describe Vulkan performance. Windows GPU
+performance has not been measured. Linux installer qualification is still in progress.
+
+The Windows and Linux x64 builds require an AVX2-capable CPU with FMA, F16C and BMI2 support.
+The release build logs confirm these instruction-set targets; older x64 CPUs are not qualified.
 
 ## How it works
 
@@ -67,8 +74,8 @@ is not required for model loading or first synthesis; your text and audio never 
 ## Troubleshooting
 
 - The status pill under the visualizer tells the truth: `loading` → `warming` → `ready`.
-- `warming` exists so your **first generation is fast** — the app pre-compiles the GPU pipelines at
-  startup instead of during your first request.
+- During `warming`, the app runs a short synthesis to prepare the compute pipelines before
+  accepting your first request. Keep the app open to reuse the loaded model for later clips.
 - If the pill says `failed`, the message beside it is the actual reason. File it in
   [Issues](https://github.com/abliter8-ai/roo-voice-tts/issues) together with your OS and hardware.
 
